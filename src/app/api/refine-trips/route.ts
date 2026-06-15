@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { NextResponse } from "next/server";
 
 type InputPoint = {
@@ -35,7 +35,10 @@ const RefinedTripSchema = z.object({
   ),
 });
 
-function isValidCoordinate(latitude: number, longitude: number) {
+function isValidCoordinate(
+  latitude: number,
+  longitude: number
+): boolean {
   return (
     Number.isFinite(latitude) &&
     Number.isFinite(longitude) &&
@@ -96,6 +99,10 @@ function validateTrips(value: unknown): InputTrip[] | null {
       });
     }
 
+    if (points.length === 0) {
+      return null;
+    }
+
     trips.push({
       clusterId: possibleTrip.clusterId,
       title: possibleTrip.title,
@@ -146,7 +153,9 @@ function getAverageCoordinate(points: InputPoint[]) {
 
 function buildModelInput(trips: InputTrip[]) {
   return trips.map((trip) => {
-    const averageCoordinate = getAverageCoordinate(trip.points);
+    const averageCoordinate = getAverageCoordinate(
+      trip.points
+    );
 
     return {
       clusterId: trip.clusterId,
@@ -159,11 +168,13 @@ function buildModelInput(trips: InputTrip[]) {
       photoCount: trip.points.length,
       averageLatitude: averageCoordinate.latitude,
       averageLongitude: averageCoordinate.longitude,
-      samplePoints: trip.points.slice(0, 12).map((point) => ({
-        latitude: point.latitude,
-        longitude: point.longitude,
-        timestamp: point.timestamp,
-      })),
+      samplePoints: trip.points
+        .slice(0, 12)
+        .map((point) => ({
+          latitude: point.latitude,
+          longitude: point.longitude,
+          timestamp: point.timestamp,
+        })),
     };
   });
 }
@@ -203,34 +214,78 @@ function combineConfidence(
   return "Low";
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unknown GPT refinement error";
+}
+
+function isQuotaError(errorMessage: string): boolean {
+  const normalizedMessage = errorMessage.toLowerCase();
+
+  return (
+    normalizedMessage.includes("429") ||
+    normalizedMessage.includes("quota") ||
+    normalizedMessage.includes("billing")
+  );
+}
+
 export async function POST(request: Request) {
+  let body: unknown;
+
   try {
-    const body = await request.json();
-    const trips = validateTrips(body.trips);
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      {
+        error: "The request body must contain valid JSON.",
+      },
+      { status: 400 }
+    );
+  }
 
-    if (!trips || trips.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            "A non-empty array of valid generated trips is required.",
-        },
-        { status: 400 }
-      );
-    }
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("trips" in body)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "A non-empty array of generated trips is required.",
+      },
+      { status: 400 }
+    );
+  }
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn(
-        "OPENAI_API_KEY is missing. Returning original DBSCAN trips."
-      );
+  const trips = validateTrips(body.trips);
 
-      return NextResponse.json({
-        trips: createFallbackResult(trips),
-        refinedWithGpt: false,
-        warning:
-          "GPT refinement was skipped because the API key is not configured.",
-      });
-    }
+  if (!trips || trips.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "A non-empty array of valid generated trips is required.",
+      },
+      { status: 400 }
+    );
+  }
 
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn(
+      "OPENAI_API_KEY is missing. Returning original DBSCAN trips."
+    );
+
+    return NextResponse.json({
+      trips: createFallbackResult(trips),
+      refinedWithGpt: false,
+      warning:
+        "GPT refinement was skipped because the API key is not configured.",
+    });
+  }
+
+  try {
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -296,49 +351,69 @@ Rules:
 
     const refinedTrips = parsedResult.trips.map(
       (refinedTrip) => {
-        const sourceTrips = refinedTrip.sourceClusterIds.map(
-          (clusterId) => {
-            const sourceTrip = tripById.get(clusterId);
+        const sourceTrips =
+          refinedTrip.sourceClusterIds.map(
+            (clusterId) => {
+              const sourceTrip =
+                tripById.get(clusterId);
 
-            if (!sourceTrip) {
-              throw new Error(
-                `GPT returned an unknown cluster ID: ${clusterId}`
-              );
+              if (!sourceTrip) {
+                throw new Error(
+                  `GPT returned an unknown cluster ID: ${clusterId}`
+                );
+              }
+
+              if (usedClusterIds.has(clusterId)) {
+                throw new Error(
+                  `GPT reused cluster ID: ${clusterId}`
+                );
+              }
+
+              usedClusterIds.add(clusterId);
+
+              return sourceTrip;
             }
-
-            if (usedClusterIds.has(clusterId)) {
-              throw new Error(
-                `GPT reused cluster ID: ${clusterId}`
-              );
-            }
-
-            usedClusterIds.add(clusterId);
-            return sourceTrip;
-          }
-        );
+          );
 
         const combinedPoints = sourceTrips
           .flatMap((trip) => trip.points)
           .sort(
             (firstPoint, secondPoint) =>
-              new Date(firstPoint.timestamp).getTime() -
-              new Date(secondPoint.timestamp).getTime()
+              new Date(
+                firstPoint.timestamp
+              ).getTime() -
+              new Date(
+                secondPoint.timestamp
+              ).getTime()
           );
+
+        if (combinedPoints.length === 0) {
+          throw new Error(
+            "GPT produced a trip without photo points."
+          );
+        }
 
         return {
           sourceClusterIds:
             refinedTrip.sourceClusterIds,
-          title: refinedTrip.title.trim(),
+          title:
+            refinedTrip.title.trim() ||
+            sourceTrips[0].title,
           city: refinedTrip.city,
           country: refinedTrip.country,
-          summary: refinedTrip.summary.trim(),
+          summary:
+            refinedTrip.summary.trim() ||
+            sourceTrips[0].insight,
           boundaryReason:
-            refinedTrip.boundaryReason.trim(),
+            refinedTrip.boundaryReason.trim() ||
+            "Kept the original DBSCAN boundary.",
           points: combinedPoints,
-          startTimestamp: combinedPoints[0].timestamp,
+          startTimestamp:
+            combinedPoints[0].timestamp,
           endTimestamp:
-            combinedPoints[combinedPoints.length - 1]
-              .timestamp,
+            combinedPoints[
+              combinedPoints.length - 1
+            ].timestamp,
           confidence: combineConfidence(sourceTrips),
         };
       }
@@ -352,8 +427,12 @@ Rules:
 
     refinedTrips.sort(
       (firstTrip, secondTrip) =>
-        new Date(firstTrip.startTimestamp).getTime() -
-        new Date(secondTrip.startTimestamp).getTime()
+        new Date(
+          firstTrip.startTimestamp
+        ).getTime() -
+        new Date(
+          secondTrip.startTimestamp
+        ).getTime()
     );
 
     return NextResponse.json({
@@ -361,11 +440,30 @@ Rules:
       refinedWithGpt: true,
     });
   } catch (error) {
-    console.error("GPT trip refinement failed:", error);
+    console.error(
+      "GPT trip refinement failed:",
+      error
+    );
+
+    const errorMessage = getErrorMessage(error);
+
+    if (isQuotaError(errorMessage)) {
+      return NextResponse.json({
+        trips: createFallbackResult(trips),
+        refinedWithGpt: false,
+        warning:
+          "GPT refinement was skipped because the OpenAI API quota or billing limit is unavailable.",
+      });
+    }
 
     return NextResponse.json(
       {
-        error: "Could not refine trip boundaries with GPT.",
+        error:
+          "Could not refine trip boundaries with GPT.",
+        details:
+          process.env.NODE_ENV === "development"
+            ? errorMessage
+            : undefined,
       },
       { status: 500 }
     );

@@ -459,7 +459,9 @@ export default function UploadPage() {
 
       if (!refinementResponse.ok) {
         throw new Error(
-          refinementData.error || "GPT trip refinement failed"
+          refinementData.details ||
+            refinementData.error ||
+            "GPT trip refinement failed"
         );
       }
 
