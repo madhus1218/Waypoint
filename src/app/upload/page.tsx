@@ -25,6 +25,23 @@ type TravelPoint = {
   timestamp: string;
 };
 
+type RefinedTripResponse = {
+  title: string;
+  city: string | null;
+  country: string | null;
+  confidence: "High" | "Medium" | "Low";
+  startTimestamp: string;
+  endTimestamp: string;
+  summary: string;
+  boundaryReason: string;
+  points: Array<{
+    filename: string;
+    latitude: number;
+    longitude: number;
+    timestamp: string;
+  }>;
+};
+
 type GeneratedTrip = {
   title: string;
   city: string | null;
@@ -399,15 +416,76 @@ export default function UploadPage() {
         "Running DBSCAN clustering and saving trips..."
       );
 
-      const generatedTrips = generateTrips(points);
+      const dbscanTrips = generateTrips(points);
 
-      if (generatedTrips.length === 0) {
+      if (dbscanTrips.length === 0) {
         setSaveStatus("error");
         setSaveMessage(
           `No trips could be generated. DBSCAN requires at least ${DBSCAN_MIN_POINTS} nearby photo points within ${DBSCAN_EPSILON_MILES} miles.`
         );
         return;
       }
+
+      setSaveMessage(
+        "DBSCAN clustering complete. Refining ambiguous trip boundaries with GPT..."
+      );
+
+      const refinementResponse = await fetch("/api/refine-trips", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trips: dbscanTrips.map((trip, index) => ({
+            clusterId: `cluster-${index + 1}`,
+            title: trip.title,
+            city: trip.city,
+            country: trip.country,
+            confidence: trip.confidence,
+            startTimestamp: trip.startTimestamp,
+            endTimestamp: trip.endTimestamp,
+            insight: trip.insight,
+            points: trip.points.map((point) => ({
+              filename: point.filename,
+              latitude: Number(point.latitude),
+              longitude: Number(point.longitude),
+              timestamp: point.timestamp,
+            })),
+          })),
+        }),
+      });
+
+      const refinementData = await refinementResponse.json();
+
+      if (!refinementResponse.ok) {
+        throw new Error(
+          refinementData.error || "GPT trip refinement failed"
+        );
+      }
+
+      const generatedTrips: GeneratedTrip[] = (
+        refinementData.trips as RefinedTripResponse[]
+      ).map((trip) => ({
+        title: trip.title,
+        city: trip.city,
+        country: trip.country,
+        confidence: trip.confidence,
+        startTimestamp: trip.startTimestamp,
+        endTimestamp: trip.endTimestamp,
+        insight: `${trip.summary} Boundary decision: ${trip.boundaryReason}`,
+        points: trip.points.map((point) => ({
+          filename: point.filename,
+          latitude: String(point.latitude),
+          longitude: String(point.longitude),
+          timestamp: point.timestamp,
+        })),
+      }));
+
+      setSaveMessage(
+        refinementData.refinedWithGpt
+          ? "GPT refinement complete. Saving trips..."
+          : "GPT refinement was unavailable. Saving the original DBSCAN trips..."
+      );
 
       await Promise.all(
         generatedTrips.map(async (trip) => {
