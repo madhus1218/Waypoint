@@ -5,17 +5,13 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#07130f] text-white">
       <section className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between">
+        <nav className="flex items-center">
           <div className="flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500">
               <Route className="h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight">Waypoint</span>
           </div>
-
-          <button className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white/90 transition hover:border-emerald-400 hover:text-emerald-300">
-            Sign in
-          </button>
         </nav>
 
         <div className="grid flex-1 items-center gap-12 py-20 md:grid-cols-2">
@@ -42,10 +38,6 @@ export default function Home() {
                 Start mapping
                 <ArrowRight className="h-5 w-5" />
               </Link>
-
-              <button className="rounded-full border border-white/20 px-7 py-3 font-semibold text-white/90 transition hover:border-white/40 hover:bg-white/5">
-                View demo
-              </button>
             </div>
           </div>
 
@@ -61,11 +53,11 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="relative h-80 overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-emerald-950">
-                <div className="absolute left-10 top-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute left-28 top-24 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute right-24 top-32 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute bottom-20 right-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
+              <div className="relative h-80 overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-green-950 to-slate-900">
+                <div className="absolute left-10 top-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(110,231,183,0.5)]" />
+                <div className="absolute left-28 top-24 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(110,231,183,0.5)]" />
+                <div className="absolute right-24 top-32 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(110,231,183,0.5)]" />
+                <div className="absolute bottom-20 right-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(110,231,183,0.5)]" />
 
                 <svg
                   className="absolute inset-0 h-full w-full"
@@ -75,7 +67,7 @@ export default function Home() {
                 >
                   <path
                     d="M55 65 C 120 90, 110 130, 170 115 S 280 115, 305 160 S 330 240, 360 245"
-                    stroke="#60a5fa"
+                    stroke="#34d399"
                     strokeWidth="4"
                     strokeLinecap="round"
                     strokeDasharray="10 10"

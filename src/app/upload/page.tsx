@@ -25,6 +25,7 @@ type GeneratedTrip = {
   title: string;
   city: string | null;
   country: string | null;
+  confidence: "High" | "Medium" | "Low";
   startTimestamp: string;
   endTimestamp: string;
   insight: string;
@@ -128,7 +129,10 @@ function getTripInsight(
   const startDate = new Date(startTimestamp);
   const endDate = new Date(endTimestamp);
 
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    Number.isNaN(endDate.getTime())
+  ) {
     return `${pointCount} photo point${
       pointCount === 1 ? "" : "s"
     } grouped near ${title}.`;
@@ -198,6 +202,20 @@ function getDuplicateKey(point: TravelPoint) {
     Number(point.longitude).toFixed(6),
     new Date(point.timestamp).toISOString(),
   ].join("|");
+}
+
+function getTripConfidence(
+  pointCount: number
+): "High" | "Medium" | "Low" {
+  if (pointCount >= 5) {
+    return "High";
+  }
+
+  if (pointCount >= 3) {
+    return "Medium";
+  }
+
+  return "Low";
 }
 
 function generateTrips(points: TravelPoint[]): GeneratedTrip[] {
@@ -298,6 +316,7 @@ function generateTrips(points: TravelPoint[]): GeneratedTrip[] {
         title: location.title,
         city: location.city,
         country: location.country,
+        confidence: getTripConfidence(sortedTripPoints.length),
         startTimestamp: firstPoint.timestamp,
         endTimestamp: lastPoint.timestamp,
         insight: getTripInsight(
@@ -469,7 +488,7 @@ export default function UploadPage() {
               endDate: trip.endTimestamp,
               city: trip.city,
               country: trip.country,
-              notes: trip.insight,
+              notes: `${trip.insight} Detection confidence: ${trip.confidence}.`,
               photoPoints: trip.points.map((point) => ({
                 filename: point.filename,
                 latitude: Number(point.latitude),
@@ -530,8 +549,8 @@ export default function UploadPage() {
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-300">
             Upload a CSV containing photo timestamps and GPS coordinates.
-            Waypoint will validate the file, detect trips, and build your
-            travel timeline.
+            Waypoint will validate the file, detect trips, calculate
+            confidence levels, and build your travel timeline.
           </p>
         </header>
 
@@ -552,8 +571,9 @@ export default function UploadPage() {
               <h2 className="text-2xl font-bold">Choose a CSV file</h2>
 
               <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                The file must include filename, latitude, longitude, and
-                timestamp columns.
+                Upload your own metadata or use the full demo CSV to test
+                confidence levels, validation, duplicate removal,
+                time-based trip separation, and interactive route maps.
               </p>
 
               <span className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400">
@@ -567,7 +587,7 @@ export default function UploadPage() {
                 className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-emerald-300/50 hover:bg-emerald-400/10 hover:text-white"
               >
                 <Download className="h-4 w-4" />
-                Download sample CSV
+                Download full demo CSV
               </a>
 
               {fileName && (
@@ -596,7 +616,7 @@ export default function UploadPage() {
             <InfoCard
               icon={<Sparkles className="h-5 w-5" />}
               title="Trip detection"
-              description="Waypoint groups nearby points while separating trips that occur more than 72 hours apart."
+              description="Waypoint groups nearby points, separates trips more than 72 hours apart, and assigns confidence based on photo count."
             />
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
