@@ -24,12 +24,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const ownerId = searchParams.get("ownerId");
 
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Owner ID is required" },
+        { status: 400 }
+      );
+    }
+
     const trips = await prisma.trip.findMany({
-      where: ownerId
-        ? {
-            ownerId,
-          }
-        : undefined,
+      where: {
+        ownerId,
+      },
       orderBy: {
         createdAt: "desc",
       },
@@ -68,9 +73,9 @@ export async function POST(request: Request) {
       photoPoints,
     } = body;
 
-    if (!title || !startDate || !endDate) {
+    if (!ownerId || !title?.trim() || !startDate || !endDate) {
       return NextResponse.json(
-        { error: "Missing required trip fields" },
+        { error: "Owner ID, title, start date, and end date are required" },
         { status: 400 }
       );
     }
@@ -88,10 +93,17 @@ export async function POST(request: Request) {
       );
     }
 
+    if (parsedEndDate < parsedStartDate) {
+      return NextResponse.json(
+        { error: "End date cannot be before start date" },
+        { status: 400 }
+      );
+    }
+
     const existingTrip = await prisma.trip.findFirst({
       where: {
-        ownerId: ownerId || null,
-        title,
+        ownerId,
+        title: title.trim(),
         startDate: parsedStartDate,
         endDate: parsedEndDate,
       },
@@ -116,13 +128,13 @@ export async function POST(request: Request) {
 
     const trip = await prisma.trip.create({
       data: {
-        ownerId: ownerId || null,
-        title,
+        ownerId,
+        title: title.trim(),
         startDate: parsedStartDate,
         endDate: parsedEndDate,
-        city: city || null,
-        country: country || null,
-        notes: notes || null,
+        city: city?.trim() || null,
+        country: country?.trim() || null,
+        notes: notes?.trim() || null,
         photoPoints: {
           create:
             photoPoints?.map((point) => ({

@@ -182,10 +182,10 @@ export default function TripDetailPage() {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                title: editedTitle,
-                city: editedTitle,
-                country: trip.country,
-                notes: editedNotes,
+              title: editedTitle,
+              city: trip.city,
+              country: trip.country,
+              notes: editedNotes,
             }),
             });
 

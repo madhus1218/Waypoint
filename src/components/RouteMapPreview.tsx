@@ -1,3 +1,18 @@
+"use client";
+
+import "leaflet/dist/leaflet.css";
+
+import L from "leaflet";
+import { useEffect, useMemo } from "react";
+import {
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
+
 type RoutePoint = {
   id?: string;
   filename?: string | null;
@@ -11,126 +26,271 @@ type RouteMapPreviewProps = {
   points: RoutePoint[];
 };
 
-function normalize(value: number, min: number, max: number) {
-  if (max === min) return 50;
-  return ((value - min) / (max - min)) * 80 + 10;
+type ValidRoutePoint = RoutePoint & {
+  latitudeNumber: number;
+  longitudeNumber: number;
+};
+
+const numberedMarkerIcons = new Map<string, L.DivIcon>();
+
+function getPointTimestamp(point: RoutePoint) {
+  return point.timestamp || point.takenAt || "";
 }
 
 function getPointLabel(point: RoutePoint, index: number) {
   return point.filename || `Point ${index + 1}`;
 }
 
-function getPointTimestamp(point: RoutePoint) {
-  return point.timestamp || point.takenAt || "";
+function formatTimestamp(timestamp: string) {
+  if (!timestamp) {
+    return "Unknown time";
+  }
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-export default function RouteMapPreview({ points }: RouteMapPreviewProps) {
-  const validPoints = points
-    .map((point) => ({
-      ...point,
-      latitudeNumber: Number(point.latitude),
-      longitudeNumber: Number(point.longitude),
-    }))
-    .filter(
-      (point) =>
-        !Number.isNaN(point.latitudeNumber) &&
-        !Number.isNaN(point.longitudeNumber)
-    )
-    .sort((a, b) => {
-      const aTime = new Date(getPointTimestamp(a)).getTime();
-      const bTime = new Date(getPointTimestamp(b)).getTime();
+function getMarkerIcon(
+  index: number,
+  pointCount: number
+): L.DivIcon {
+  const type =
+    index === 0 ? "start" : index === pointCount - 1 ? "end" : "middle";
 
-      if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
-        return 0;
-      }
+  const cacheKey = `${type}-${index}`;
 
-      return aTime - bTime;
+  const cachedIcon = numberedMarkerIcons.get(cacheKey);
+
+  if (cachedIcon) {
+    return cachedIcon;
+  }
+
+  const backgroundClass =
+    type === "start"
+      ? "background:#22c55e;"
+      : type === "end"
+        ? "background:#ef4444;"
+        : "background:#60a5fa;";
+
+  const icon = L.divIcon({
+    className: "",
+    html: `
+      <div
+        style="
+          ${backgroundClass}
+          width:32px;
+          height:32px;
+          border-radius:9999px;
+          border:3px solid white;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          color:#07111f;
+          font-size:12px;
+          font-weight:800;
+          box-shadow:0 4px 14px rgba(0,0,0,0.45);
+        "
+      >
+        ${index + 1}
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -18],
+  });
+
+  numberedMarkerIcons.set(cacheKey, icon);
+
+  return icon;
+}
+
+function FitMapBounds({ points }: { points: ValidRoutePoint[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (points.length === 0) {
+      return;
+    }
+
+    const bounds = L.latLngBounds(
+      points.map((point) => [
+        point.latitudeNumber,
+        point.longitudeNumber,
+      ])
+    );
+
+    if (points.length === 1) {
+      map.setView(bounds.getCenter(), 13);
+      return;
+    }
+
+    map.fitBounds(bounds, {
+      padding: [40, 40],
+      maxZoom: 14,
     });
+  }, [map, points]);
+
+  return null;
+}
+
+export default function RouteMapPreview({
+  points,
+}: RouteMapPreviewProps) {
+  const validPoints = useMemo<ValidRoutePoint[]>(() => {
+    return points
+      .map((point) => ({
+        ...point,
+        latitudeNumber: Number(point.latitude),
+        longitudeNumber: Number(point.longitude),
+      }))
+      .filter(
+        (point) =>
+          Number.isFinite(point.latitudeNumber) &&
+          Number.isFinite(point.longitudeNumber) &&
+          point.latitudeNumber >= -90 &&
+          point.latitudeNumber <= 90 &&
+          point.longitudeNumber >= -180 &&
+          point.longitudeNumber <= 180
+      )
+      .sort((a, b) => {
+        const aTime = new Date(getPointTimestamp(a)).getTime();
+        const bTime = new Date(getPointTimestamp(b)).getTime();
+
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+          return 0;
+        }
+
+        if (Number.isNaN(aTime)) {
+          return 1;
+        }
+
+        if (Number.isNaN(bTime)) {
+          return -1;
+        }
+
+        return aTime - bTime;
+      });
+  }, [points]);
+
+  const routePositions = useMemo<[number, number][]>(
+    () =>
+      validPoints.map((point) => [
+        point.latitudeNumber,
+        point.longitudeNumber,
+      ]),
+    [validPoints]
+  );
 
   if (validPoints.length === 0) {
     return (
       <div className="flex h-[520px] items-center justify-center rounded-3xl border border-white/10 bg-[#0d1b2f] p-8 text-center">
         <div>
-          <p className="text-lg font-semibold text-white">No valid coordinates</p>
+          <p className="text-lg font-semibold text-white">
+            No valid coordinates
+          </p>
+
           <p className="mt-2 text-sm text-slate-400">
-            This trip does not have enough location data to draw a route.
+            This trip does not contain enough location data to display a map.
           </p>
         </div>
       </div>
     );
   }
 
-  const latitudes = validPoints.map((point) => point.latitudeNumber);
-  const longitudes = validPoints.map((point) => point.longitudeNumber);
-
-  const minLat = Math.min(...latitudes);
-  const maxLat = Math.max(...latitudes);
-  const minLng = Math.min(...longitudes);
-  const maxLng = Math.max(...longitudes);
-
-  const plottedPoints = validPoints.map((point) => ({
-    ...point,
-    left: normalize(point.longitudeNumber, minLng, maxLng),
-    top: 100 - normalize(point.latitudeNumber, minLat, maxLat),
-  }));
-
-  const pathData = plottedPoints
-    .map((point, index) =>
-      index === 0
-        ? `M ${point.left} ${point.top}`
-        : `L ${point.left} ${point.top}`
-    )
-    .join(" ");
+  const firstPoint = validPoints[0];
 
   return (
-    <div className="relative h-[520px] overflow-hidden rounded-3xl bg-gradient-to-br from-blue-950 via-slate-900 to-emerald-950">
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute left-1/4 top-0 h-full w-px bg-white/20" />
-        <div className="absolute left-1/2 top-0 h-full w-px bg-white/20" />
-        <div className="absolute left-3/4 top-0 h-full w-px bg-white/20" />
-        <div className="absolute left-0 top-1/4 h-px w-full bg-white/20" />
-        <div className="absolute left-0 top-1/2 h-px w-full bg-white/20" />
-        <div className="absolute left-0 top-3/4 h-px w-full bg-white/20" />
-      </div>
-
-      <svg
-        className="absolute inset-0 h-full w-full"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+    <div className="relative overflow-hidden rounded-3xl border border-white/10">
+      <MapContainer
+        center={[
+          firstPoint.latitudeNumber,
+          firstPoint.longitudeNumber,
+        ]}
+        zoom={12}
+        scrollWheelZoom
+        className="h-[520px] w-full"
       >
-        {plottedPoints.length > 1 && (
-          <path
-            d={pathData}
-            stroke="#60a5fa"
-            strokeWidth="1"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="2 2"
+        <TileLayer
+          attribution="&copy; OpenStreetMap contributors"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
+        />
+
+        <FitMapBounds points={validPoints} />
+
+        {routePositions.length > 1 && (
+          <Polyline
+            positions={routePositions}
+            pathOptions={{
+              color: "#60a5fa",
+              weight: 4,
+              opacity: 0.9,
+            }}
           />
         )}
-      </svg>
 
-      {plottedPoints.map((point, index) => (
-        <div
-          key={point.id || `${getPointLabel(point, index)}-${index}`}
-          className="absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-blue-300 text-xs font-bold text-blue-950 shadow-[0_0_24px_8px_rgba(147,197,253,0.45)]"
-          style={{
-            left: `${point.left}%`,
-            top: `${point.top}%`,
-          }}
-          title={`${getPointLabel(point, index)}: ${point.latitude}, ${point.longitude}`}
-        >
-          {index + 1}
-        </div>
-      ))}
+        {validPoints.map((point, index) => (
+          <Marker
+            key={
+              point.id ||
+              `${point.latitudeNumber}-${point.longitudeNumber}-${index}`
+            }
+            position={[
+              point.latitudeNumber,
+              point.longitudeNumber,
+            ]}
+            icon={getMarkerIcon(index, validPoints.length)}
+          >
+            <Popup>
+              <div className="min-w-44">
+                <p className="font-semibold">
+                  {getPointLabel(point, index)}
+                </p>
 
-      <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur">
-        <p className="text-sm text-slate-300">Generated route preview</p>
-        <p className="font-semibold">
-          {plottedPoints.length} mapped photo point
-          {plottedPoints.length === 1 ? "" : "s"}
+                <p className="mt-1 text-sm">
+                  {formatTimestamp(getPointTimestamp(point))}
+                </p>
+
+                <p className="mt-1 text-xs">
+                  {point.latitudeNumber.toFixed(5)},{" "}
+                  {point.longitudeNumber.toFixed(5)}
+                </p>
+
+                {index === 0 && (
+                  <p className="mt-2 text-xs font-semibold text-green-700">
+                    Trip start
+                  </p>
+                )}
+
+                {index === validPoints.length - 1 &&
+                  validPoints.length > 1 && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">
+                      Trip end
+                    </p>
+                  )}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
+
+      <div className="pointer-events-none absolute bottom-5 left-5 z-[500] rounded-2xl border border-white/10 bg-[#07111f]/90 px-4 py-3 text-white shadow-xl backdrop-blur">
+        <p className="text-xs text-slate-400">Interactive route map</p>
+
+        <p className="mt-1 text-sm font-semibold">
+          {validPoints.length} mapped photo point
+          {validPoints.length === 1 ? "" : "s"}
         </p>
       </div>
     </div>

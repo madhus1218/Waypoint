@@ -17,10 +17,17 @@ export async function GET(request: Request, { params }: RouteParams) {
     const { id } = await params;
     const ownerId = getOwnerIdFromRequest(request);
 
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Owner ID is required" },
+        { status: 400 }
+      );
+    }
+
     const trip = await prisma.trip.findFirst({
       where: {
         id,
-        ownerId: ownerId || null,
+        ownerId,
       },
       include: {
         photoPoints: {
@@ -32,7 +39,10 @@ export async function GET(request: Request, { params }: RouteParams) {
     });
 
     if (!trip) {
-      return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Trip not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ trip });
@@ -51,24 +61,36 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     const { id } = await params;
     const ownerId = getOwnerIdFromRequest(request);
 
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Owner ID is required" },
+        { status: 400 }
+      );
+    }
+
     const existingTrip = await prisma.trip.findFirst({
       where: {
         id,
-        ownerId: ownerId || null,
+        ownerId,
       },
     });
 
     if (!existingTrip) {
-      return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Trip not found" },
+        { status: 404 }
+      );
     }
 
     await prisma.trip.delete({
       where: {
-        id,
+        id: existingTrip.id,
       },
     });
 
-    return NextResponse.json({ message: "Trip deleted successfully" });
+    return NextResponse.json({
+      message: "Trip deleted successfully",
+    });
   } catch (error) {
     console.error("Failed to delete trip:", error);
 
@@ -83,11 +105,18 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params;
     const ownerId = getOwnerIdFromRequest(request);
-    const body = await request.json();
 
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Owner ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
     const { title, city, country, notes } = body;
 
-    if (!title || title.trim().length === 0) {
+    if (typeof title !== "string" || title.trim().length === 0) {
       return NextResponse.json(
         { error: "Trip title is required" },
         { status: 400 }
@@ -97,23 +126,27 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const existingTrip = await prisma.trip.findFirst({
       where: {
         id,
-        ownerId: ownerId || null,
+        ownerId,
       },
     });
 
     if (!existingTrip) {
-      return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Trip not found" },
+        { status: 404 }
+      );
     }
 
     const updatedTrip = await prisma.trip.update({
       where: {
-        id,
+        id: existingTrip.id,
       },
       data: {
         title: title.trim(),
-        city: city?.trim() || null,
-        country: country?.trim() || null,
-        notes: notes?.trim() || null,
+        city: typeof city === "string" ? city.trim() || null : null,
+        country:
+          typeof country === "string" ? country.trim() || null : null,
+        notes: typeof notes === "string" ? notes.trim() || null : null,
       },
       include: {
         photoPoints: {
