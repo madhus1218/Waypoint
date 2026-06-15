@@ -3,7 +3,14 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import { Upload, FileText, MapPin, Sparkles, ArrowLeft } from "lucide-react";
+import {
+  Upload,
+  FileText,
+  MapPin,
+  Sparkles,
+  ArrowLeft,
+  Download,
+} from "lucide-react";
 import Link from "next/link";
 import { getAnonymousOwnerId } from "@/lib/anonymousUser";
 
@@ -500,7 +507,7 @@ export default function UploadPage() {
   return (
     <main className="min-h-screen bg-[#07111f] px-6 py-8 text-white">
       <section className="mx-auto max-w-6xl">
-        <nav className="mb-12 flex items-center justify-between">
+        <nav className="mb-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
             href="/"
             className="flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
@@ -554,6 +561,16 @@ export default function UploadPage() {
               <div className="mt-7 rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400">
                 Upload CSV
               </div>
+
+              <a
+                href="/sample-waypoint-data.csv"
+                download
+                onClick={(event) => event.stopPropagation()}
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-blue-300/50 hover:bg-blue-400/10 hover:text-white"
+              >
+                <Download className="h-4 w-4" />
+                Download sample CSV
+              </a>
 
               {fileName && (
                 <p className="mt-4 text-sm text-blue-200">
@@ -691,7 +708,7 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
               )}
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-white/10">
+            <div className="overflow-x-auto rounded-2xl border border-white/10">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="bg-white/10 text-slate-300">
                   <tr>
