@@ -13,6 +13,10 @@ import {
   Upload,
 } from "lucide-react";
 import { getAnonymousOwnerId } from "@/lib/anonymousUser";
+import {
+  inferTripsWithDbscan,
+  type GeoPoint,
+} from "@/lib/dbscan";
 
 type TravelPoint = {
   filename: string;
@@ -47,31 +51,9 @@ const REQUIRED_COLUMNS = [
   "timestamp",
 ] as const;
 
-const MAX_DISTANCE_MILES = 75;
+const DBSCAN_EPSILON_MILES = 75;
+const DBSCAN_MIN_POINTS = 2;
 const MAX_TIME_GAP_HOURS = 72;
-
-function calculateDistanceMiles(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
-  const earthRadiusMiles = 3958.8;
-
-  const latDistance = ((lat2 - lat1) * Math.PI) / 180;
-  const lonDistance = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(latDistance / 2) * Math.sin(latDistance / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(lonDistance / 2) *
-      Math.sin(lonDistance / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadiusMiles * c;
-}
 
 function getLocationDetails(latitude: number, longitude: number) {
   if (
@@ -135,7 +117,7 @@ function getTripInsight(
   ) {
     return `${pointCount} photo point${
       pointCount === 1 ? "" : "s"
-    } grouped near ${title}.`;
+    } grouped near ${title} using DBSCAN geospatial clustering.`;
   }
 
   const dayCount =
@@ -150,7 +132,7 @@ function getTripInsight(
 
   return `${pointCount} photo points grouped near ${title} over ${dayCount} day${
     dayCount === 1 ? "" : "s"
-  }.`;
+  } using DBSCAN geospatial clustering.`;
 }
 
 function normalizeRow(row: TravelPoint): TravelPoint {
@@ -176,7 +158,11 @@ function validateTravelPoint(row: TravelPoint) {
     return "Missing a required value";
   }
 
-  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+  if (
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90
+  ) {
     return "Latitude must be between -90 and 90";
   }
 
@@ -218,121 +204,57 @@ function getTripConfidence(
   return "Low";
 }
 
+function convertToGeoPoints(points: TravelPoint[]): GeoPoint[] {
+  return points.map((point) => ({
+    filename: point.filename,
+    latitude: Number(point.latitude),
+    longitude: Number(point.longitude),
+    timestamp: point.timestamp,
+  }));
+}
+
+function convertToTravelPoint(point: GeoPoint): TravelPoint {
+  return {
+    filename: point.filename || "unknown-photo",
+    latitude: String(point.latitude),
+    longitude: String(point.longitude),
+    timestamp: point.timestamp,
+  };
+}
+
 function generateTrips(points: TravelPoint[]): GeneratedTrip[] {
-  const sortedPoints = [...points].sort(
-    (a, b) =>
-      new Date(a.timestamp).getTime() -
-      new Date(b.timestamp).getTime()
-  );
+  const geoPoints = convertToGeoPoints(points);
 
-  const clusters: TravelPoint[][] = [];
-
-  sortedPoints.forEach((point) => {
-    const latitude = Number(point.latitude);
-    const longitude = Number(point.longitude);
-    const timestamp = new Date(point.timestamp).getTime();
-
-    if (
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude) ||
-      Number.isNaN(timestamp)
-    ) {
-      return;
-    }
-
-    const matchingCluster = clusters.find((cluster) => {
-      const averageLatitude =
-        cluster.reduce(
-          (sum, item) => sum + Number(item.latitude),
-          0
-        ) / cluster.length;
-
-      const averageLongitude =
-        cluster.reduce(
-          (sum, item) => sum + Number(item.longitude),
-          0
-        ) / cluster.length;
-
-      const distance = calculateDistanceMiles(
-        latitude,
-        longitude,
-        averageLatitude,
-        averageLongitude
-      );
-
-      const latestTimestamp = Math.max(
-        ...cluster.map((item) =>
-          new Date(item.timestamp).getTime()
-        )
-      );
-
-      const timeGapHours =
-        Math.abs(timestamp - latestTimestamp) /
-        (1000 * 60 * 60);
-
-      return (
-        distance <= MAX_DISTANCE_MILES &&
-        timeGapHours <= MAX_TIME_GAP_HOURS
-      );
-    });
-
-    if (matchingCluster) {
-      matchingCluster.push(point);
-    } else {
-      clusters.push([point]);
-    }
+  const dbscanClusters = inferTripsWithDbscan(geoPoints, {
+    epsilonMiles: DBSCAN_EPSILON_MILES,
+    minPoints: DBSCAN_MIN_POINTS,
+    maxTimeGapHours: MAX_TIME_GAP_HOURS,
   });
 
-  return clusters
-    .map((tripPoints) => {
-      const sortedTripPoints = [...tripPoints].sort(
-        (a, b) =>
-          new Date(a.timestamp).getTime() -
-          new Date(b.timestamp).getTime()
-      );
+  return dbscanClusters.map((cluster) => {
+    const tripPoints = cluster.points.map(convertToTravelPoint);
 
-      const firstPoint = sortedTripPoints[0];
-      const lastPoint =
-        sortedTripPoints[sortedTripPoints.length - 1];
-
-      const averageLatitude =
-        sortedTripPoints.reduce(
-          (sum, point) => sum + Number(point.latitude),
-          0
-        ) / sortedTripPoints.length;
-
-      const averageLongitude =
-        sortedTripPoints.reduce(
-          (sum, point) => sum + Number(point.longitude),
-          0
-        ) / sortedTripPoints.length;
-
-      const location = getLocationDetails(
-        averageLatitude,
-        averageLongitude
-      );
-
-      return {
-        title: location.title,
-        city: location.city,
-        country: location.country,
-        confidence: getTripConfidence(sortedTripPoints.length),
-        startTimestamp: firstPoint.timestamp,
-        endTimestamp: lastPoint.timestamp,
-        insight: getTripInsight(
-          location.title,
-          sortedTripPoints.length,
-          firstPoint.timestamp,
-          lastPoint.timestamp
-        ),
-        points: sortedTripPoints,
-      };
-    })
-    .sort(
-      (a, b) =>
-        new Date(a.startTimestamp).getTime() -
-        new Date(b.startTimestamp).getTime()
+    const location = getLocationDetails(
+      cluster.latitude,
+      cluster.longitude
     );
+
+    return {
+      title: location.title,
+      city: location.city,
+      country: location.country,
+      confidence: getTripConfidence(tripPoints.length),
+      startTimestamp: cluster.startDate,
+      endTimestamp: cluster.endDate,
+      insight: getTripInsight(
+        location.title,
+        tripPoints.length,
+        cluster.startDate,
+        cluster.endDate
+      ),
+      points: tripPoints,
+    };
+  });
 }
 
 export default function UploadPage() {
@@ -380,6 +302,7 @@ export default function UploadPage() {
               missingColumns.length === 1 ? "" : "s"
             }: ${missingColumns.join(", ")}.`
           );
+
           localStorage.removeItem("waypoint-points");
           return;
         }
@@ -432,11 +355,13 @@ export default function UploadPage() {
           setError(
             "No valid travel points were found. Review the validation details below."
           );
+
           localStorage.removeItem("waypoint-points");
           return;
         }
 
         setPoints(validRows);
+
         localStorage.setItem(
           "waypoint-points",
           JSON.stringify(validRows)
@@ -445,7 +370,11 @@ export default function UploadPage() {
 
       error: (parseError) => {
         console.error("CSV parsing failed:", parseError);
-        setError("Something went wrong while parsing the CSV file.");
+
+        setError(
+          "Something went wrong while parsing the CSV file."
+        );
+
         setPoints([]);
         setValidationSummary(null);
         localStorage.removeItem("waypoint-points");
@@ -456,7 +385,9 @@ export default function UploadPage() {
   async function handleGenerateAndSaveTrips() {
     if (points.length === 0) {
       setSaveStatus("error");
-      setSaveMessage("Upload a valid CSV before generating trips.");
+      setSaveMessage(
+        "Upload a valid CSV before generating trips."
+      );
       return;
     }
 
@@ -464,13 +395,17 @@ export default function UploadPage() {
 
     try {
       setSaveStatus("saving");
-      setSaveMessage("Generating and saving trips...");
+      setSaveMessage(
+        "Running DBSCAN clustering and saving trips..."
+      );
 
       const generatedTrips = generateTrips(points);
 
       if (generatedTrips.length === 0) {
         setSaveStatus("error");
-        setSaveMessage("No trips could be generated from this CSV.");
+        setSaveMessage(
+          `No trips could be generated. DBSCAN requires at least ${DBSCAN_MIN_POINTS} nearby photo points within ${DBSCAN_EPSILON_MILES} miles.`
+        );
         return;
       }
 
@@ -501,7 +436,9 @@ export default function UploadPage() {
           const data = await response.json();
 
           if (!response.ok) {
-            throw new Error(data.error || "Failed to save trip");
+            throw new Error(
+              data.error || "Failed to save trip"
+            );
           }
 
           return data.trip;
@@ -509,16 +446,22 @@ export default function UploadPage() {
       );
 
       setSaveStatus("saved");
+
       setSaveMessage(
-        `Saved ${generatedTrips.length} trip${
+        `Saved ${generatedTrips.length} DBSCAN-detected trip${
           generatedTrips.length === 1 ? "" : "s"
         }. Redirecting...`
       );
 
       router.push("/trips");
     } catch (saveError) {
-      console.error("Failed to generate and save trips:", saveError);
+      console.error(
+        "Failed to generate and save trips:",
+        saveError
+      );
+
       setSaveStatus("error");
+
       setSaveMessage(
         "Could not save trips. Check your database connection."
       );
@@ -548,9 +491,10 @@ export default function UploadPage() {
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-            Upload a CSV containing photo timestamps and GPS coordinates.
-            Waypoint will validate the file, detect trips, calculate
-            confidence levels, and build your travel timeline.
+            Upload a CSV containing photo timestamps and GPS
+            coordinates. Waypoint will validate the file, run
+            DBSCAN-based geospatial clustering, separate visits by
+            timestamp, and build your travel timeline.
           </p>
         </header>
 
@@ -568,12 +512,15 @@ export default function UploadPage() {
                 <FileText className="h-8 w-8" />
               </div>
 
-              <h2 className="text-2xl font-bold">Choose a CSV file</h2>
+              <h2 className="text-2xl font-bold">
+                Choose a CSV file
+              </h2>
 
               <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                Upload your own metadata or use the full demo CSV to test
-                confidence levels, validation, duplicate removal,
-                time-based trip separation, and interactive route maps.
+                Upload your own metadata or use the full demo CSV
+                to test DBSCAN clustering, confidence levels,
+                validation, duplicate removal, time-based trip
+                separation, and interactive route maps.
               </p>
 
               <span className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400">
@@ -615,12 +562,14 @@ export default function UploadPage() {
 
             <InfoCard
               icon={<Sparkles className="h-5 w-5" />}
-              title="Trip detection"
-              description="Waypoint groups nearby points, separates trips more than 72 hours apart, and assigns confidence based on photo count."
+              title="DBSCAN trip detection"
+              description={`Waypoint detects dense groups of at least ${DBSCAN_MIN_POINTS} photo points within ${DBSCAN_EPSILON_MILES} miles, then separates visits more than ${MAX_TIME_GAP_HOURS} hours apart.`}
             />
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <h3 className="font-bold">Expected CSV format</h3>
+              <h3 className="font-bold">
+                Expected CSV format
+              </h3>
 
               <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                 <pre className="overflow-x-auto p-4 text-xs leading-6 text-slate-300">
@@ -640,7 +589,9 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
               CSV validation
             </p>
 
-            <h2 className="mt-2 text-2xl font-bold">Upload summary</h2>
+            <h2 className="mt-2 text-2xl font-bold">
+              Upload summary
+            </h2>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <ValidationStat
@@ -679,7 +630,8 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 {validationSummary.rejectedRows >
                   validationSummary.messages.length && (
                   <p className="mt-3 text-xs text-amber-200/70">
-                    Only the first few validation warnings are shown.
+                    Only the first few validation warnings are
+                    shown.
                   </p>
                 )}
               </div>
@@ -689,7 +641,8 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
               validationSummary.rejectedRows === 0 &&
               validationSummary.duplicateRows === 0 && (
                 <p className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-                  Your CSV passed validation and is ready for trip generation.
+                  Your CSV passed validation and is ready for
+                  DBSCAN trip generation.
                 </p>
               )}
           </section>
@@ -704,8 +657,9 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-400">
-                  Showing the first {Math.min(points.length, 8)} rows from
-                  your uploaded CSV.
+                  Showing the first{" "}
+                  {Math.min(points.length, 8)} rows from your
+                  uploaded CSV.
                 </p>
               </div>
 
@@ -716,7 +670,7 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 className="rounded-full bg-emerald-500 px-6 py-3 text-center font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saveStatus === "saving"
-                  ? "Saving trips..."
+                  ? "Running DBSCAN..."
                   : "Generate trips"}
               </button>
             </div>
@@ -739,7 +693,9 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                   <tr>
                     <th className="px-4 py-3">Filename</th>
                     <th className="px-4 py-3">Latitude</th>
-                    <th className="px-4 py-3">Longitude</th>
+                    <th className="px-4 py-3">
+                      Longitude
+                    </th>
                     <th className="px-4 py-3">Timestamp</th>
                   </tr>
                 </thead>
@@ -787,7 +743,9 @@ function ValidationStat({
   return (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
       <p className="text-sm text-slate-400">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-white">{value}</p>
+      <p className="mt-2 text-3xl font-bold text-white">
+        {value}
+      </p>
     </div>
   );
 }
