@@ -10,8 +10,6 @@ import {
   MapPin,
   Plus,
   RefreshCw,
-  Route,
-  Sparkles,
   Upload,
 } from "lucide-react";
 
@@ -82,7 +80,6 @@ export default function TripsPage() {
   const [trips, setTrips] = useState<SavedTrip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [expandedTripId, setExpandedTripId] = useState<string | null>(null);
 
   async function fetchTrips() {
     try {
@@ -133,9 +130,9 @@ export default function TripsPage() {
 
   if (isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07130f] px-6 text-white">
         <section className="rounded-[2rem] border border-white/10 bg-white/5 p-8 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-500/20 text-blue-300">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500/20 text-emerald-300">
             <RefreshCw className="h-7 w-7 animate-spin" />
           </div>
 
@@ -151,7 +148,7 @@ export default function TripsPage() {
 
   if (error) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07130f] px-6 text-white">
         <section className="max-w-xl rounded-[2rem] border border-red-300/20 bg-red-400/10 p-8 text-center">
           <h1 className="text-3xl font-bold">Could not load trips.</h1>
 
@@ -159,7 +156,7 @@ export default function TripsPage() {
 
           <button
             onClick={fetchTrips}
-            className="mt-7 rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400"
+            className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400"
           >
             Try again
           </button>
@@ -170,9 +167,9 @@ export default function TripsPage() {
 
   if (trips.length === 0) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07130f] px-6 text-white">
         <section className="max-w-xl rounded-[2rem] border border-white/10 bg-white/5 p-8 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-500/20 text-blue-300">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500/20 text-emerald-300">
             <Upload className="h-7 w-7" />
           </div>
 
@@ -185,7 +182,7 @@ export default function TripsPage() {
 
           <Link
             href="/upload"
-            className="mt-7 inline-flex rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400"
+            className="mt-7 inline-flex rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400"
           >
             Upload CSV
           </Link>
@@ -195,7 +192,7 @@ export default function TripsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07111f] px-6 py-8 text-white">
+    <main className="min-h-screen bg-[#07130f] px-6 py-8 text-white">
       <section className="mx-auto max-w-6xl">
         <nav className="mb-12 flex items-center justify-between">
           <Link
@@ -207,17 +204,10 @@ export default function TripsPage() {
           </Link>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={fetchTrips}
-              className="flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:border-blue-300/40 hover:text-white"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </button>
 
             <Link
               href="/upload"
-              className="flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-400"
+              className="flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400"
             >
               <Plus className="h-4 w-4" />
               New upload
@@ -226,18 +216,13 @@ export default function TripsPage() {
         </nav>
 
         <div className="mb-10">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-4 py-2 text-sm text-blue-200">
-            <Sparkles className="h-4 w-4" />
-            Saved trip history
-          </div>
 
           <h1 className="max-w-4xl text-4xl font-bold tracking-tight md:text-6xl">
             Your Waypoint travel timeline.
           </h1>
 
           <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-            These trips are now loaded from your database, not just browser
-            localStorage.
+            Review the trips Waypoint detected from your uploaded photo metadata.
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -254,11 +239,11 @@ export default function TripsPage() {
             return (
               <article
                 key={trip.id}
-                className="rounded-[2rem] border border-white/10 bg-white/5 p-6 transition hover:border-blue-400/40 hover:bg-white/[0.07]"
+                className="rounded-[2rem] border border-white/10 bg-white/5 p-6 transition hover:border-emerald-400/40 hover:bg-white/[0.07]"
               >
                 <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
                   <div className="flex-1">
-                    <p className="text-sm text-blue-200">Saved trip {index + 1}</p>
+                    <p className="text-sm text-emerald-200">Saved trip {index + 1}</p>
 
                     <h2 className="mt-2 text-3xl font-bold">{trip.title}</h2>
 
@@ -270,18 +255,18 @@ export default function TripsPage() {
 
                     <div className="mt-5 grid gap-3 text-sm text-slate-300 md:grid-cols-3">
                       <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-blue-300" />
+                        <Calendar className="h-4 w-4 text-emerald-300" />
                         {formatDateRange(trip.startDate, trip.endDate)}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <Camera className="h-4 w-4 text-blue-300" />
+                        <Camera className="h-4 w-4 text-emerald-300" />
                         {trip.photoPoints.length} photo point
                         {trip.photoPoints.length === 1 ? "" : "s"}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-blue-300" />
+                        <MapPin className="h-4 w-4 text-emerald-300" />
                         {averageCoordinate
                           ? `${formatCoordinate(
                               averageCoordinate.latitude,
@@ -297,52 +282,13 @@ export default function TripsPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
-                    <Link
-                      href={`/trips/${trip.id}`}
-                      className="rounded-full bg-blue-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400"
-                    >
-                      Open trip page
-                    </Link>
-
-                    <button
-                      onClick={() =>
-                        setExpandedTripId(
-                          expandedTripId === trip.id ? null : trip.id
-                        )
-                      }
-                      className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white/90 transition hover:border-blue-300/50 hover:bg-blue-400/10"
-                    >
-                      {expandedTripId === trip.id ? "Hide points" : "Preview points"}
-                    </button>
-                  </div>
+                  <Link
+                    href={`/trips/${trip.id}`}
+                    className="shrink-0 rounded-full bg-emerald-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-400"
+                  >
+                    View trip
+                  </Link>
                 </div>
-
-                {expandedTripId === trip.id && (
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
-                      <Route className="h-4 w-4 text-blue-300" />
-                      Photo points
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                      {trip.photoPoints.map((point) => (
-                        <div
-                          key={point.id}
-                          className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-300"
-                        >
-                          <p className="font-semibold text-white">
-                            {point.filename || "Untitled photo"}
-                          </p>
-                          <p className="mt-1">{formatDate(point.takenAt)}</p>
-                          <p className="mt-1">
-                            {point.latitude}, {point.longitude}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </article>
             );
           })}

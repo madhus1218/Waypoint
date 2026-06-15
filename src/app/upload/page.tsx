@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Papa from "papaparse";
 import {
-  Upload,
+  ArrowLeft,
+  Download,
   FileText,
   MapPin,
   Sparkles,
-  ArrowLeft,
-  Download,
+  Upload,
 } from "lucide-react";
-import Link from "next/link";
 import { getAnonymousOwnerId } from "@/lib/anonymousUser";
 
 type TravelPoint = {
@@ -39,19 +39,15 @@ type ValidationSummary = {
   messages: string[];
 };
 
-function formatDate(timestamp: string) {
-  const date = new Date(timestamp);
+const REQUIRED_COLUMNS = [
+  "filename",
+  "latitude",
+  "longitude",
+  "timestamp",
+] as const;
 
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
-  }
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+const MAX_DISTANCE_MILES = 75;
+const MAX_TIME_GAP_HOURS = 72;
 
 function calculateDistanceMiles(
   lat1: number,
@@ -133,12 +129,15 @@ function getTripInsight(
   const endDate = new Date(endTimestamp);
 
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    return `${pointCount} photo point${pointCount === 1 ? "" : "s"} grouped near ${title}.`;
+    return `${pointCount} photo point${
+      pointCount === 1 ? "" : "s"
+    } grouped near ${title}.`;
   }
 
   const dayCount =
     Math.ceil(
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      (endDate.getTime() - startDate.getTime()) /
+        (1000 * 60 * 60 * 24)
     ) + 1;
 
   if (pointCount === 1) {
@@ -149,13 +148,6 @@ function getTripInsight(
     dayCount === 1 ? "" : "s"
   }.`;
 }
-
-const REQUIRED_COLUMNS = [
-  "filename",
-  "latitude",
-  "longitude",
-  "timestamp",
-] as const;
 
 function normalizeRow(row: TravelPoint): TravelPoint {
   return {
@@ -184,7 +176,11 @@ function validateTravelPoint(row: TravelPoint) {
     return "Latitude must be between -90 and 90";
   }
 
-  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+  if (
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
     return "Longitude must be between -180 and 180";
   }
 
@@ -203,9 +199,6 @@ function getDuplicateKey(point: TravelPoint) {
     new Date(point.timestamp).toISOString(),
   ].join("|");
 }
-
-const MAX_DISTANCE_MILES = 75;
-const MAX_TIME_GAP_HOURS = 72;
 
 function generateTrips(points: TravelPoint[]): GeneratedTrip[] {
   const sortedPoints = [...points].sort(
@@ -327,202 +320,207 @@ export default function UploadPage() {
   const router = useRouter();
 
   const [points, setPoints] = useState<TravelPoint[]>([]);
-  const [fileName, setFileName] = useState<string>("");
-  const [error, setError] = useState<string>("");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const [saveMessage, setSaveMessage] = useState("");
-  const [validationSummary, setValidationSummary] = useState<ValidationSummary | null>(null);
+  const [validationSummary, setValidationSummary] =
+    useState<ValidationSummary | null>(null);
 
-  function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
-  const file = event.target.files?.[0];
+  function handleFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
 
-  if (!file) {
-    return;
-  }
-
-  setFileName(file.name);
-  setError("");
-  setPoints([]);
-  setValidationSummary(null);
-  setSaveStatus("idle");
-  setSaveMessage("");
-
-  Papa.parse<TravelPoint>(file, {
-    header: true,
-    skipEmptyLines: "greedy",
-    transformHeader: (header) => header.trim().toLowerCase(),
-    complete: (results) => {
-      const fields = results.meta.fields || [];
-
-      const missingColumns = REQUIRED_COLUMNS.filter(
-        (column) => !fields.includes(column)
-      );
-
-      if (missingColumns.length > 0) {
-        setError(
-          `Missing required CSV column${
-            missingColumns.length === 1 ? "" : "s"
-          }: ${missingColumns.join(", ")}.`
-        );
-        return;
-      }
-
-      if (results.errors.length > 0) {
-        console.warn("CSV parsing warnings:", results.errors);
-      }
-
-      const normalizedRows = results.data.map(normalizeRow);
-      const validRows: TravelPoint[] = [];
-      const validationMessages = new Set<string>();
-      const seenRows = new Set<string>();
-
-      let rejectedRows = 0;
-      let duplicateRows = 0;
-
-      normalizedRows.forEach((row, index) => {
-        const validationError = validateTravelPoint(row);
-
-        if (validationError) {
-          rejectedRows += 1;
-          validationMessages.add(
-            `Row ${index + 2}: ${validationError}.`
-          );
-          return;
-        }
-
-        const duplicateKey = getDuplicateKey(row);
-
-        if (seenRows.has(duplicateKey)) {
-          duplicateRows += 1;
-          return;
-        }
-
-        seenRows.add(duplicateKey);
-        validRows.push(row);
-      });
-
-      const summary: ValidationSummary = {
-        totalRows: normalizedRows.length,
-        validRows: validRows.length,
-        rejectedRows,
-        duplicateRows,
-        messages: Array.from(validationMessages).slice(0, 6),
-      };
-
-      setValidationSummary(summary);
-
-      if (validRows.length === 0) {
-        setError(
-          "No valid travel points were found. Review the validation details below."
-        );
-        localStorage.removeItem("waypoint-points");
-        return;
-      }
-
-      setPoints(validRows);
-      localStorage.setItem(
-        "waypoint-points",
-        JSON.stringify(validRows)
-      );
-    },
-    error: (parseError) => {
-      console.error("CSV parsing failed:", parseError);
-      setError("Something went wrong while parsing the CSV file.");
-      setPoints([]);
-      setValidationSummary(null);
-      localStorage.removeItem("waypoint-points");
-    },
-  });
-}
-
-  async function handleGenerateAndSaveTrips() {
-  if (points.length === 0) {
-    const ownerId = getAnonymousOwnerId();
-    setSaveStatus("error");
-    setSaveMessage("Upload a valid CSV before generating trips.");
-    return;
-  }
-
-  const ownerId = getAnonymousOwnerId();
-
-  try {
-    setSaveStatus("saving");
-    setSaveMessage("Generating and saving trips...");
-
-    const generatedTrips = generateTrips(points);
-
-    if (generatedTrips.length === 0) {
-      setSaveStatus("error");
-      setSaveMessage("No trips could be generated from this CSV.");
+    if (!file) {
       return;
     }
 
-    await Promise.all(
-      generatedTrips.map(async (trip) => {
-        const response = await fetch("/api/trips", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-          ownerId,
-          title: trip.title,
-          startDate: trip.startTimestamp,
-          endDate: trip.endTimestamp,
-          city: trip.city,
-          country: trip.country,
-          notes: trip.insight,
-          photoPoints: trip.points.map((point) => ({
-            filename: point.filename,
-            latitude: Number(point.latitude),
-            longitude: Number(point.longitude),
-            takenAt: point.timestamp,
-          })),
-        }),
-        });
+    setFileName(file.name);
+    setError("");
+    setPoints([]);
+    setValidationSummary(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
 
-        const data = await response.json();
+    Papa.parse<TravelPoint>(file, {
+      header: true,
+      skipEmptyLines: "greedy",
+      transformHeader: (header) => header.trim().toLowerCase(),
 
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to save trip");
+      complete: (results) => {
+        const fields = results.meta.fields || [];
+
+        const missingColumns = REQUIRED_COLUMNS.filter(
+          (column) => !fields.includes(column)
+        );
+
+        if (missingColumns.length > 0) {
+          setError(
+            `Missing required CSV column${
+              missingColumns.length === 1 ? "" : "s"
+            }: ${missingColumns.join(", ")}.`
+          );
+          localStorage.removeItem("waypoint-points");
+          return;
         }
 
-        return data.trip;
-      })
-    );
+        if (results.errors.length > 0) {
+          console.warn("CSV parsing warnings:", results.errors);
+        }
 
-    setSaveStatus("saved");
-    setSaveMessage(
-      `Saved ${generatedTrips.length} trip${generatedTrips.length === 1 ? "" : "s"}. Redirecting...`
-    );
+        const normalizedRows = results.data.map(normalizeRow);
+        const validRows: TravelPoint[] = [];
+        const validationMessages = new Set<string>();
+        const seenRows = new Set<string>();
 
-    router.push("/trips");
-  } catch (err) {
-    console.error("Failed to generate and save trips:", err);
-    setSaveStatus("error");
-    setSaveMessage("Could not save trips. Check your database connection.");
+        let rejectedRows = 0;
+        let duplicateRows = 0;
+
+        normalizedRows.forEach((row, index) => {
+          const validationError = validateTravelPoint(row);
+
+          if (validationError) {
+            rejectedRows += 1;
+            validationMessages.add(
+              `Row ${index + 2}: ${validationError}.`
+            );
+            return;
+          }
+
+          const duplicateKey = getDuplicateKey(row);
+
+          if (seenRows.has(duplicateKey)) {
+            duplicateRows += 1;
+            return;
+          }
+
+          seenRows.add(duplicateKey);
+          validRows.push(row);
+        });
+
+        const summary: ValidationSummary = {
+          totalRows: normalizedRows.length,
+          validRows: validRows.length,
+          rejectedRows,
+          duplicateRows,
+          messages: Array.from(validationMessages).slice(0, 6),
+        };
+
+        setValidationSummary(summary);
+
+        if (validRows.length === 0) {
+          setError(
+            "No valid travel points were found. Review the validation details below."
+          );
+          localStorage.removeItem("waypoint-points");
+          return;
+        }
+
+        setPoints(validRows);
+        localStorage.setItem(
+          "waypoint-points",
+          JSON.stringify(validRows)
+        );
+      },
+
+      error: (parseError) => {
+        console.error("CSV parsing failed:", parseError);
+        setError("Something went wrong while parsing the CSV file.");
+        setPoints([]);
+        setValidationSummary(null);
+        localStorage.removeItem("waypoint-points");
+      },
+    });
   }
-}
+
+  async function handleGenerateAndSaveTrips() {
+    if (points.length === 0) {
+      setSaveStatus("error");
+      setSaveMessage("Upload a valid CSV before generating trips.");
+      return;
+    }
+
+    const ownerId = getAnonymousOwnerId();
+
+    try {
+      setSaveStatus("saving");
+      setSaveMessage("Generating and saving trips...");
+
+      const generatedTrips = generateTrips(points);
+
+      if (generatedTrips.length === 0) {
+        setSaveStatus("error");
+        setSaveMessage("No trips could be generated from this CSV.");
+        return;
+      }
+
+      await Promise.all(
+        generatedTrips.map(async (trip) => {
+          const response = await fetch("/api/trips", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ownerId,
+              title: trip.title,
+              startDate: trip.startTimestamp,
+              endDate: trip.endTimestamp,
+              city: trip.city,
+              country: trip.country,
+              notes: trip.insight,
+              photoPoints: trip.points.map((point) => ({
+                filename: point.filename,
+                latitude: Number(point.latitude),
+                longitude: Number(point.longitude),
+                takenAt: point.timestamp,
+              })),
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || "Failed to save trip");
+          }
+
+          return data.trip;
+        })
+      );
+
+      setSaveStatus("saved");
+      setSaveMessage(
+        `Saved ${generatedTrips.length} trip${
+          generatedTrips.length === 1 ? "" : "s"
+        }. Redirecting...`
+      );
+
+      router.push("/trips");
+    } catch (saveError) {
+      console.error("Failed to generate and save trips:", saveError);
+      setSaveStatus("error");
+      setSaveMessage(
+        "Could not save trips. Check your database connection."
+      );
+    }
+  }
 
   return (
-    <main className="min-h-screen bg-[#07111f] px-6 py-8 text-white">
+    <main className="min-h-screen bg-[#07130f] px-5 py-8 text-white sm:px-6">
       <section className="mx-auto max-w-6xl">
-        <nav className="mb-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <nav className="mb-12">
           <Link
             href="/"
-            className="flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to home
           </Link>
-
-          <div className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300">
-            Waypoint Upload
-          </div>
         </nav>
 
-        <div className="mb-10 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-500/20 text-blue-300">
+        <header className="mb-10 text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500/20 text-emerald-300">
             <Upload className="h-7 w-7" />
           </div>
 
@@ -531,60 +529,62 @@ export default function UploadPage() {
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-            Start by uploading a CSV export with photo timestamps and GPS
-            coordinates. Waypoint will use this data to detect trips and
-            generate your travel timeline.
+            Upload a CSV containing photo timestamps and GPS coordinates.
+            Waypoint will validate the file, detect trips, and build your
+            travel timeline.
           </p>
-        </div>
+        </header>
 
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
-            <label className="flex min-h-80 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border-2 border-dashed border-blue-400/30 bg-blue-400/5 p-8 text-center transition hover:border-blue-300 hover:bg-blue-400/10">
+            <label className="flex min-h-80 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border-2 border-dashed border-emerald-400/30 bg-emerald-400/5 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-400/10">
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,text/csv"
                 onChange={handleFileUpload}
                 className="hidden"
               />
 
-              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-500 text-white">
+              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-500 text-white">
                 <FileText className="h-8 w-8" />
               </div>
 
-              <h2 className="text-2xl font-bold">Choose your CSV file</h2>
+              <h2 className="text-2xl font-bold">Choose a CSV file</h2>
 
               <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                For the MVP, use a CSV with filename, latitude, longitude, and
+                The file must include filename, latitude, longitude, and
                 timestamp columns.
               </p>
 
-              <div className="mt-7 rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400">
-                Upload CSV
-              </div>
+              <span className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400">
+                Select CSV
+              </span>
 
               <a
                 href="/sample-waypoint-data.csv"
                 download
                 onClick={(event) => event.stopPropagation()}
-                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-blue-300/50 hover:bg-blue-400/10 hover:text-white"
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-emerald-300/50 hover:bg-emerald-400/10 hover:text-white"
               >
                 <Download className="h-4 w-4" />
                 Download sample CSV
               </a>
 
               {fileName && (
-                <p className="mt-4 text-sm text-blue-200">
+                <p className="mt-5 text-sm text-emerald-200">
                   Selected: {fileName}
                 </p>
               )}
 
               {error && (
-                <p className="mt-4 max-w-md text-sm text-red-300">{error}</p>
+                <p className="mt-4 max-w-md text-sm text-red-300">
+                  {error}
+                </p>
               )}
             </label>
           </div>
 
-          <div className="space-y-4">
+          <aside className="space-y-4">
             <InfoCard
               icon={<MapPin className="h-5 w-5" />}
               title="Location points"
@@ -596,7 +596,7 @@ export default function UploadPage() {
             <InfoCard
               icon={<Sparkles className="h-5 w-5" />}
               title="Trip detection"
-              description="Next, Waypoint will cluster nearby points to infer trips, stops, and routes."
+              description="Waypoint groups nearby points while separating trips that occur more than 72 hours apart."
             />
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -611,20 +611,16 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 </pre>
               </div>
             </div>
-          </div>
+          </aside>
         </div>
 
         {validationSummary && (
           <section className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6">
-            <div>
-              <p className="text-sm font-medium text-blue-200">
-                CSV validation
-              </p>
+            <p className="text-sm font-medium text-emerald-200">
+              CSV validation
+            </p>
 
-              <h2 className="mt-2 text-2xl font-bold">
-                Upload summary
-              </h2>
-            </div>
+            <h2 className="mt-2 text-2xl font-bold">Upload summary</h2>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <ValidationStat
@@ -663,7 +659,7 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 {validationSummary.rejectedRows >
                   validationSummary.messages.length && (
                   <p className="mt-3 text-xs text-amber-200/70">
-                    Only the first few unique validation warnings are shown.
+                    Only the first few validation warnings are shown.
                   </p>
                 )}
               </div>
@@ -680,33 +676,42 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
         )}
 
         {points.length > 0 && (
-          <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6">
-            <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <section className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6">
+            <div className="mb-5 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
               <div>
-                <h2 className="text-2xl font-bold">Parsed metadata preview</h2>
+                <h2 className="text-2xl font-bold">
+                  Parsed metadata preview
+                </h2>
+
                 <p className="mt-1 text-sm text-slate-400">
-                  Showing the first {Math.min(points.length, 8)} rows from your
-                  uploaded CSV.
+                  Showing the first {Math.min(points.length, 8)} rows from
+                  your uploaded CSV.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={handleGenerateAndSaveTrips}
-                disabled={saveStatus === "saving" || points.length === 0}
-                className="rounded-full bg-blue-500 px-6 py-3 text-center font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={saveStatus === "saving"}
+                className="rounded-full bg-emerald-500 px-6 py-3 text-center font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saveStatus === "saving" ? "Saving trips..." : "Generate & save trips"}
+                {saveStatus === "saving"
+                  ? "Saving trips..."
+                  : "Generate trips"}
               </button>
-              {saveMessage && (
-                <p
-                  className={`mt-3 text-sm ${
-                    saveStatus === "error" ? "text-red-300" : "text-blue-200"
-                  }`}
-                >
-                  {saveMessage}
-                </p>
-              )}
             </div>
+
+            {saveMessage && (
+              <p
+                className={`mb-5 rounded-2xl border p-4 text-sm ${
+                  saveStatus === "error"
+                    ? "border-red-300/20 bg-red-400/10 text-red-200"
+                    : "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+                }`}
+              >
+                {saveMessage}
+              </p>
+            )}
 
             <div className="overflow-x-auto rounded-2xl border border-white/10">
               <table className="w-full min-w-[720px] text-left text-sm">
@@ -721,16 +726,22 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
 
                 <tbody>
                   {points.slice(0, 8).map((point, index) => (
-                    <tr key={index} className="border-t border-white/10">
+                    <tr
+                      key={`${point.filename}-${point.timestamp}-${index}`}
+                      className="border-t border-white/10"
+                    >
                       <td className="px-4 py-3 text-slate-200">
                         {point.filename}
                       </td>
+
                       <td className="px-4 py-3 text-slate-300">
                         {point.latitude}
                       </td>
+
                       <td className="px-4 py-3 text-slate-300">
                         {point.longitude}
                       </td>
+
                       <td className="px-4 py-3 text-slate-300">
                         {point.timestamp}
                       </td>
@@ -739,7 +750,7 @@ photo3.jpg,47.3769,8.5417,2026-01-18T09:15:00`}
                 </tbody>
               </table>
             </div>
-          </div>
+          </section>
         )}
       </section>
     </main>
@@ -772,11 +783,15 @@ function InfoCard({
 }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-300">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
         {icon}
       </div>
+
       <h3 className="font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>
+
+      <p className="mt-2 text-sm leading-6 text-slate-400">
+        {description}
+      </p>
     </div>
   );
 }

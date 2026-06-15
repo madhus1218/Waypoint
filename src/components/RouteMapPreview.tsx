@@ -80,8 +80,8 @@ function getMarkerIcon(
     type === "start"
       ? "background:#22c55e;"
       : type === "end"
-        ? "background:#ef4444;"
-        : "background:#60a5fa;";
+        ? "background:#047857;"
+        : "background:#34d399;";
 
   const icon = L.divIcon({
     className: "",
@@ -96,7 +96,7 @@ function getMarkerIcon(
           display:flex;
           align-items:center;
           justify-content:center;
-          color:#07111f;
+          color:#07130f;
           font-size:12px;
           font-weight:800;
           box-shadow:0 4px 14px rgba(0,0,0,0.45);
@@ -233,7 +233,7 @@ export default function RouteMapPreview({
           <Polyline
             positions={routePositions}
             pathOptions={{
-              color: "#60a5fa",
+              color: "#10b981",
               weight: 4,
               opacity: 0.9,
             }}
@@ -275,7 +275,7 @@ export default function RouteMapPreview({
 
                 {index === validPoints.length - 1 &&
                   validPoints.length > 1 && (
-                    <p className="mt-2 text-xs font-semibold text-red-700">
+                    <p className="mt-2 text-xs font-semibold text-emerald-800">
                       Trip end
                     </p>
                   )}
@@ -285,7 +285,7 @@ export default function RouteMapPreview({
         ))}
       </MapContainer>
 
-      <div className="pointer-events-none absolute bottom-5 left-5 z-[500] rounded-2xl border border-white/10 bg-[#07111f]/90 px-4 py-3 text-white shadow-xl backdrop-blur">
+      <div className="pointer-events-none absolute bottom-5 left-5 z-[500] rounded-2xl border border-white/10 bg-[#07130f]/90 px-4 py-3 text-white shadow-xl backdrop-blur">
         <p className="text-xs text-slate-400">Interactive route map</p>
 
         <p className="mt-1 text-sm font-semibold">

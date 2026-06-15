@@ -220,9 +220,9 @@ export default function TripDetailPage() {
 
   if (isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07130f] px-6 text-white">
         <section className="rounded-[2rem] border border-white/10 bg-white/5 p-8 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-500/20 text-blue-300">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500/20 text-emerald-300">
             <RefreshCw className="h-7 w-7 animate-spin" />
           </div>
 
@@ -238,7 +238,7 @@ export default function TripDetailPage() {
 
   if (error || !trip) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07130f] px-6 text-white">
         <section className="max-w-xl rounded-[2rem] border border-red-300/20 bg-red-400/10 p-8 text-center">
           <h1 className="text-3xl font-bold">Trip not found.</h1>
 
@@ -246,7 +246,7 @@ export default function TripDetailPage() {
 
           <Link
             href="/trips"
-            className="mt-7 inline-flex rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400"
+            className="mt-7 inline-flex rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400"
           >
             Back to trips
           </Link>
@@ -256,55 +256,41 @@ export default function TripDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07111f] px-6 py-8 text-white">
+    <main className="min-h-screen bg-[#07130f] px-6 py-8 text-white">
       <section className="mx-auto max-w-6xl">
-        <nav className="mb-12 flex items-center justify-between">
-            <Link
-                href="/trips"
-                className="flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
-            >
-                <ArrowLeft className="h-4 w-4" />
-                Back to trips
-            </Link>
-
-            <div className="flex items-center gap-3">
-                <button
-                onClick={handleDeleteTrip}
-                className="rounded-full border border-red-300/20 px-4 py-2 text-sm font-medium text-red-200 transition hover:border-red-300/40 hover:bg-red-400/10"
-                >
-                Delete trip
-                </button>
-
-                <div className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300">
-                Trip Detail
-                </div>
-            </div>
-            </nav>
+        <nav className="mb-12">
+          <Link
+            href="/trips"
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to trips
+          </Link>
+        </nav>
 
         <div className="mb-10 rounded-[2rem] border border-white/10 bg-white/5 p-8">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-start">
                 <div className="flex-1">
-                    <p className="text-sm text-blue-200">Saved Waypoint trip</p>
 
                     {isEditing ? (
                     <div className="mt-3 space-y-4">
                         <input
                         value={editedTitle}
                         onChange={(event) => setEditedTitle(event.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-3xl font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-blue-300/50 focus:bg-white/10 md:text-5xl"
+                        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-3xl font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/50 focus:bg-white/10 md:text-5xl"
                         placeholder="Trip title"
                         />
 
                         <textarea
                         value={editedNotes}
                         onChange={(event) => setEditedNotes(event.target.value)}
-                        className="min-h-32 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-base leading-7 text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-blue-300/50 focus:bg-white/10"
+                        className="min-h-32 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-base leading-7 text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-emerald-300/50 focus:bg-white/10"
                         placeholder="Add notes about this trip..."
                         />
                     </div>
                     ) : (
                     <>
-                        <h1 className="mt-3 text-4xl font-bold tracking-tight md:text-6xl">
+                        <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
                         {trip.title}
                         </h1>
 
@@ -339,27 +325,38 @@ export default function TripDetailPage() {
                         <button
                         onClick={handleSaveTripEdits}
                         disabled={saveStatus === "saving"}
-                        className="rounded-full bg-blue-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-full bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                         {saveStatus === "saving" ? "Saving..." : "Save"}
                         </button>
                     </>
                     ) : (
-                    <button
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
                         onClick={() => {
-                        setIsEditing(true);
-                        setSaveStatus("idle");
+                          setIsEditing(true);
+                          setSaveStatus("idle");
                         }}
-                        className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white/90 transition hover:border-blue-300/50 hover:bg-blue-400/10"
-                    >
+                        className="rounded-full bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400"
+                      >
                         Edit trip
-                    </button>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDeleteTrip}
+                        className="rounded-full px-4 py-3 text-sm font-medium text-slate-400 transition hover:bg-red-400/10 hover:text-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
                     )}
                 </div>
                 </div>
 
                 {saveStatus === "saved" && (
-                <div className="mt-5 rounded-2xl border border-blue-300/30 bg-blue-400/10 px-4 py-3 text-sm text-blue-100">
+                <div className="mt-5 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
                     Trip updated successfully.
                 </div>
                 )}
@@ -406,7 +403,7 @@ export default function TripDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
           <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
             <div className="mb-5 flex items-center gap-2">
-              <Route className="h-5 w-5 text-blue-300" />
+              <Route className="h-5 w-5 text-emerald-300" />
               <h2 className="text-2xl font-bold">Timeline points</h2>
             </div>
 
@@ -416,7 +413,7 @@ export default function TripDetailPage() {
                   key={point.id}
                   className="rounded-2xl border border-white/10 bg-black/20 p-4"
                 >
-                  <p className="text-sm text-blue-200">Point {index + 1}</p>
+                  <p className="text-sm text-emerald-200">Point {index + 1}</p>
 
                   <h3 className="mt-1 font-semibold text-white">
                     {point.filename || "Untitled photo"}
@@ -435,10 +432,7 @@ export default function TripDetailPage() {
           </section>
 
           <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
-            <div className="mb-5">
-                <p className="text-sm text-slate-400">Route preview</p>
-                <h2 className="text-2xl font-bold">Saved trip visualization</h2>
-            </div>
+            <h2 className="mb-5 text-2xl font-bold">Route map</h2>
 
             <RouteMapPreview points={trip.photoPoints} />
           </section>
@@ -459,7 +453,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-300">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
         {icon}
       </div>
       <p className="text-sm text-slate-400">{label}</p>

@@ -3,24 +3,24 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#07111f] text-white">
+    <main className="min-h-screen bg-[#07130f] text-white">
       <section className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
         <nav className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500">
               <Route className="h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight">Waypoint</span>
           </div>
 
-          <button className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white/90 transition hover:border-blue-400 hover:text-blue-300">
+          <button className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white/90 transition hover:border-emerald-400 hover:text-emerald-300">
             Sign in
           </button>
         </nav>
 
         <div className="grid flex-1 items-center gap-12 py-20 md:grid-cols-2">
           <div>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-4 py-2 text-sm text-blue-200">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
               <Sparkles className="h-4 w-4" />
               AI-powered travel memories
             </div>
@@ -38,7 +38,7 @@ export default function Home() {
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <Link
                 href="/upload"
-                className="flex items-center justify-center gap-2 rounded-full bg-blue-500 px-7 py-3 font-semibold text-white transition hover:bg-blue-400">
+                className="flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400">
                 Start mapping
                 <ArrowRight className="h-5 w-5" />
               </Link>
@@ -56,16 +56,16 @@ export default function Home() {
                   <p className="text-sm text-slate-400">Trip detected</p>
                   <h2 className="text-2xl font-bold">Europe 2026</h2>
                 </div>
-                <div className="rounded-full bg-blue-500/20 px-3 py-1 text-sm text-blue-200">
+                <div className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm text-emerald-200">
                   42 stops
                 </div>
               </div>
 
-              <div className="relative h-80 overflow-hidden rounded-3xl bg-gradient-to-br from-blue-950 via-slate-900 to-emerald-950">
-                <div className="absolute left-10 top-12 h-3 w-3 rounded-full bg-blue-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute left-28 top-24 h-3 w-3 rounded-full bg-blue-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute right-24 top-32 h-3 w-3 rounded-full bg-blue-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
-                <div className="absolute bottom-20 right-12 h-3 w-3 rounded-full bg-blue-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
+              <div className="relative h-80 overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-emerald-950">
+                <div className="absolute left-10 top-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
+                <div className="absolute left-28 top-24 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
+                <div className="absolute right-24 top-32 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
+                <div className="absolute bottom-20 right-12 h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_20px_6px_rgba(147,197,253,0.5)]" />
 
                 <svg
                   className="absolute inset-0 h-full w-full"
@@ -124,7 +124,7 @@ function FeatureCard({
 }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-300">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
         {icon}
       </div>
       <h3 className="text-lg font-bold">{title}</h3>
