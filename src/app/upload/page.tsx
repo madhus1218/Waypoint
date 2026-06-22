@@ -9,6 +9,7 @@ import {
 } from "react";
 import { upload } from "@vercel/blob/client";
 import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -70,6 +71,8 @@ const ACCEPTED_TYPES = [
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
+
+const router = useRouter();
 
 function isAcceptedPhoto(file: File) {
   const extension = file.name
@@ -298,10 +301,12 @@ export default function UploadPage() {
 
       setState("complete");
       setMessage(
-        `Processed ${data.batch.processedCount} photos and created ${processingData.tripCount ?? 0} proposed trip${
+        `Created ${processingData.tripCount ?? 0} proposed trip${
           processingData.tripCount === 1 ? "" : "s"
-        } for review.`
+        }. Opening trip review...`
       );
+
+      router.push(`/review/${data.batch.id}`);
     } catch (error) {
       console.error("Photo upload failed:", error);
       setState("error");

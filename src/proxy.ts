@@ -6,7 +6,9 @@ import {
 const isProtectedRoute = createRouteMatcher([
   "/upload(.*)",
   "/trips(.*)",
+  "/review(.*)",
   "/api/uploads(.*)",
+  "/api/review(.*)",
   "/api/trips(.*)",
   "/api/refine-trips(.*)",
 ]);

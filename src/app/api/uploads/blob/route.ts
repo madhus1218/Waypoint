@@ -1,25 +1,27 @@
+import { auth } from "@clerk/nextjs/server";
 import {
   handleUpload,
   type HandleUploadBody,
 } from "@vercel/blob/client";
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
 
 const ALLOWED_CONTENT_TYPES = [
   "image/jpeg",
   "image/png",
+  "image/webp",
   "image/heic",
   "image/heif",
-  "image/webp",
 ];
 
 export async function POST(
   request: Request
 ): Promise<NextResponse> {
-  const body = (await request.json()) as HandleUploadBody;
-
   try {
-    const response = await handleUpload({
+    const body = (await request.json()) as HandleUploadBody;
+
+    const jsonResponse = await handleUpload({
       body,
       request,
 
@@ -27,13 +29,23 @@ export async function POST(
         const { userId } = await auth();
 
         if (!userId) {
-          throw new Error("You must be signed in to upload photos.");
+          throw new Error(
+            "You must be signed in to upload photos."
+          );
+        }
+
+        if (!process.env.BLOB_READ_WRITE_TOKEN) {
+          throw new Error(
+            "BLOB_READ_WRITE_TOKEN is missing."
+          );
         }
 
         const expectedPrefix = `uploads/${userId}/`;
 
         if (!pathname.startsWith(expectedPrefix)) {
-          throw new Error("Invalid upload pathname.");
+          throw new Error(
+            `Invalid upload pathname. Expected it to begin with ${expectedPrefix}`
+          );
         }
 
         return {
@@ -44,37 +56,32 @@ export async function POST(
             userId,
           }),
         };
-        },
+      },
 
-        onUploadCompleted: async ({ blob, tokenPayload }) => {
-          if (!tokenPayload) {
-            console.warn("Upload completed without a token payload", {
-              pathname: blob.pathname,
-            });
-            return;
-          }
-
-          const parsedPayload = JSON.parse(tokenPayload) as {
-            userId: string;
-          };
-
-          console.info("Photo uploaded to private storage", {
-            pathname: blob.pathname,
-            ownerId: parsedPayload.userId,
-          });
-        },
+      onUploadCompleted: async ({
+        blob,
+        tokenPayload,
+      }) => {
+        console.info("Blob upload completed", {
+          pathname: blob.pathname,
+          tokenPayloadPresent: Boolean(tokenPayload),
+        });
+      },
     });
 
-    return NextResponse.json(response);
+    return NextResponse.json(jsonResponse);
   } catch (error) {
-    console.error("Blob upload authorization failed:", error);
+    console.error(
+      "Blob client-token route failed:",
+      error
+    );
 
     return NextResponse.json(
       {
         error:
           error instanceof Error
             ? error.message
-            : "Could not authorize photo upload.",
+            : "Could not generate the upload token.",
       },
       {
         status: 400,
