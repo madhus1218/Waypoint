@@ -263,9 +263,44 @@ export default function UploadPage() {
     }
 
       setResult(data);
+
+      if (data.usablePhotoCount < 2) {
+        setState("complete");
+        setMessage(
+          `${data.batch.processedCount} photos were saved, but at least 2 photos with both GPS coordinates and timestamps are needed to detect trips.`
+        );
+        return;
+      }
+
+      setState("processing");
+      setMessage(
+        "Running server-side DBSCAN trip detection..."
+      );
+
+      const processingResponse = await fetch(
+        `/api/uploads/${data.batch.id}/process`,
+        {
+          method: "POST",
+        }
+      );
+
+      const processingData = (await processingResponse.json()) as {
+        tripCount?: number;
+        error?: string;
+      };
+
+      if (!processingResponse.ok) {
+        throw new Error(
+          processingData.error ||
+            "Server-side trip processing failed."
+        );
+      }
+
       setState("complete");
       setMessage(
-        `${data.batch.processedCount} photos processed. ${data.usablePhotoCount} contain both GPS coordinates and timestamps.`
+        `Processed ${data.batch.processedCount} photos and created ${processingData.tripCount ?? 0} proposed trip${
+          processingData.tripCount === 1 ? "" : "s"
+        } for review.`
       );
     } catch (error) {
       console.error("Photo upload failed:", error);

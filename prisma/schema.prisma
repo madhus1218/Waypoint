@@ -15,23 +15,10 @@ enum UploadStatus {
   FAILED
 }
 
-model UploadBatch {
-  id             String       @id @default(cuid())
-  ownerId        String
-  status         UploadStatus @default(UPLOADING)
-  originalCount  Int          @default(0)
-  processedCount Int          @default(0)
-  warningCount   Int          @default(0)
-  errorMessage   String?
-
-  photos PhotoAsset[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ownerId])
-  @@index([ownerId, status])
-  @@index([createdAt])
+enum TripStatus {
+  PROPOSED
+  CONFIRMED
+  ARCHIVED
 }
 
 model PhotoAsset {
@@ -74,15 +61,45 @@ model PhotoAsset {
   @@index([takenAt])
 }
 
+model UploadBatch {
+  id             String       @id @default(cuid())
+  ownerId        String
+  status         UploadStatus @default(UPLOADING)
+  originalCount  Int          @default(0)
+  processedCount Int          @default(0)
+  warningCount   Int          @default(0)
+  errorMessage   String?
+
+  photos PhotoAsset[]
+  trips  Trip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([ownerId, status])
+  @@index([createdAt])
+}
+
 model Trip {
-  id        String   @id @default(cuid())
-  ownerId   String?
+  id      String  @id @default(cuid())
+  ownerId String?
+
+  uploadBatchId String?
+  uploadBatch   UploadBatch? @relation(fields: [uploadBatchId], references: [id], onDelete: SetNull)
+
   title     String
   startDate DateTime
   endDate   DateTime
   city      String?
   country   String?
   notes     String?
+
+  status     TripStatus @default(PROPOSED)
+  confidence Float?
+  centerLat  Float?
+  centerLng  Float?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -91,6 +108,8 @@ model Trip {
 
   @@index([ownerId])
   @@index([ownerId, startDate])
+  @@index([ownerId, status])
+  @@index([uploadBatchId])
 }
 
 model PhotoPoint {
