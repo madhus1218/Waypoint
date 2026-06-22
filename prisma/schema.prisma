@@ -6,26 +6,98 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UploadStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  REVIEW_REQUIRED
+  COMPLETED
+  FAILED
+}
+
+model UploadBatch {
+  id             String       @id @default(cuid())
+  ownerId        String
+  status         UploadStatus @default(UPLOADING)
+  originalCount  Int          @default(0)
+  processedCount Int          @default(0)
+  warningCount   Int          @default(0)
+  errorMessage   String?
+
+  photos PhotoAsset[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([ownerId, status])
+  @@index([createdAt])
+}
+
+model PhotoAsset {
+  id      String @id @default(cuid())
+  ownerId String
+
+  uploadBatchId String
+  uploadBatch   UploadBatch @relation(fields: [uploadBatchId], references: [id], onDelete: Cascade)
+
+  tripId String?
+  trip   Trip?   @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  filename String
+  pathname String
+  blobUrl  String
+  mimeType String
+  fileSize Int
+  checksum String?
+
+  latitude  Float?
+  longitude Float?
+  takenAt   DateTime?
+
+  width       Int?
+  height      Int?
+  cameraMake  String?
+  cameraModel String?
+
+  hasGps       Boolean @default(false)
+  hasTimestamp Boolean @default(false)
+  warning      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerId, checksum])
+  @@index([ownerId])
+  @@index([uploadBatchId])
+  @@index([tripId])
+  @@index([takenAt])
+}
+
 model Trip {
-  id          String       @id @default(cuid())
-  ownerId     String?
-  title       String
-  startDate   DateTime
-  endDate     DateTime
-  city        String?
-  country     String?
-  notes       String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id        String   @id @default(cuid())
+  ownerId   String?
+  title     String
+  startDate DateTime
+  endDate   DateTime
+  city      String?
+  country   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   photoPoints PhotoPoint[]
+  photos      PhotoAsset[]
+
+  @@index([ownerId])
+  @@index([ownerId, startDate])
 }
 
 model PhotoPoint {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  tripId    String
-  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   filename  String?
   latitude  Float
@@ -33,4 +105,7 @@ model PhotoPoint {
   takenAt   DateTime
 
   createdAt DateTime @default(now())
+
+  @@index([tripId])
+  @@index([takenAt])
 }
