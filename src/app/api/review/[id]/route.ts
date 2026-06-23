@@ -277,7 +277,6 @@ export async function PATCH(
             id: action.photoId,
             ownerId: userId,
             uploadBatchId,
-            status: "PROPOSED",
           },
           select: {
             id: true,
