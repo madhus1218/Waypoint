@@ -230,18 +230,47 @@ export default function UploadClient() {
           )}`,
         ].join("/");
 
-        const blob = await upload(
-          pathname,
-          file,
-          {
-            access: "private",
-            handleUploadUrl:
-              "/api/uploads/blob",
-            multipart:
-              file.size >
-              5 * 1024 * 1024,
+        const formData = new FormData();
+          formData.append("file", file);
+          formData.append("pathname", pathname);
+
+          const uploadResponse = await fetch(
+            "/api/uploads/blob",
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          const responseText = await uploadResponse.text();
+
+          let uploadResult: {
+            blob?: UploadedBlob;
+            error?: string;
+          };
+
+          try {
+            uploadResult = JSON.parse(responseText);
+          } catch {
+            throw new Error(
+              `Upload route returned ${uploadResponse.status}: ${responseText.slice(0, 200)}`
+            );
           }
-        );
+
+          if (!uploadResponse.ok) {
+            throw new Error(
+              uploadResult.error ||
+                `Failed to upload ${file.name}.`
+            );
+          }
+
+          if (!uploadResult.blob) {
+            throw new Error(
+              `Upload succeeded but no blob was returned for ${file.name}.`
+            );
+          }
+
+          const blob = uploadResult.blob;
 
         uploadedBlobs.push({
           ...blob,
