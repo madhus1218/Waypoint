@@ -6,8 +6,8 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
+  type ReactNode,
 } from "react";
-import { upload } from "@vercel/blob/client";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -55,10 +55,25 @@ type UploadResponse = {
   usablePhotoCount: number;
 };
 
-type UploadedBlob = Awaited<ReturnType<typeof upload>> & {
+type UploadedBlob = {
+  url: string;
+  downloadUrl?: string;
+  pathname: string;
+  contentType?: string;
+  contentDisposition?: string;
   originalName: string;
   size: number;
-  contentType: string;
+};
+
+type BlobUploadResponse = {
+  blob?: {
+    url: string;
+    downloadUrl?: string;
+    pathname: string;
+    contentType?: string;
+    contentDisposition?: string;
+  };
+  error?: string;
 };
 
 const ACCEPTED_TYPES = [
@@ -69,8 +84,10 @@ const ACCEPTED_TYPES = [
   "image/webp",
 ];
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const MAX_FILES = 100;
+const UPLOAD_TIMEOUT_MS = 45_000;
+const PROCESSING_TIMEOUT_MS = 120_000;
 
 function isAcceptedPhoto(file: File) {
   const extension = file.name
@@ -95,6 +112,66 @@ function sanitizeFilename(filename: string) {
     .replace(/-+/g, "-");
 }
 
+function formatMegabytes(bytes: number) {
+  return (bytes / 1024 / 1024).toFixed(1);
+}
+
+async function readJsonResponse<T>(
+  response: Response,
+  fallbackMessage: string
+): Promise<T> {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    throw new Error(
+      `${fallbackMessage} The server returned an empty response.`
+    );
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    const preview = responseText
+      .replace(/\s+/g, " ")
+      .slice(0, 200);
+
+    throw new Error(
+      `${fallbackMessage} Server returned ${response.status}: ${preview}`
+    );
+  }
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+  timeoutMessage: string
+) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    timeoutMs
+  );
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      error.name === "AbortError"
+    ) {
+      throw new Error(timeoutMessage);
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 export default function UploadClient() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +184,10 @@ export default function UploadClient() {
   const [progress, setProgress] = useState(0);
   const [result, setResult] =
     useState<UploadResponse | null>(null);
+
+  const isBusy =
+    state === "uploading" ||
+    state === "processing";
 
   const totalSize = useMemo(
     () =>
@@ -122,11 +203,24 @@ export default function UploadClient() {
     setResult(null);
     setState("idle");
 
-    const validFiles = incomingFiles.filter(
-      (file) =>
-        isAcceptedPhoto(file) &&
-        file.size <= MAX_FILE_SIZE
-    );
+    const unsupportedFiles =
+      incomingFiles.filter(
+        (file) => !isAcceptedPhoto(file)
+      );
+
+    const oversizedFiles =
+      incomingFiles.filter(
+        (file) =>
+          isAcceptedPhoto(file) &&
+          file.size > MAX_FILE_SIZE
+      );
+
+    const validFiles =
+      incomingFiles.filter(
+        (file) =>
+          isAcceptedPhoto(file) &&
+          file.size <= MAX_FILE_SIZE
+      );
 
     const uniqueFiles = [
       ...files,
@@ -144,23 +238,44 @@ export default function UploadClient() {
     });
 
     if (uniqueFiles.length > MAX_FILES) {
+      setFiles(
+        uniqueFiles.slice(0, MAX_FILES)
+      );
+      setState("error");
       setMessage(
         `You can upload up to ${MAX_FILES} photos at a time.`
       );
-      setState("error");
-      setFiles(uniqueFiles.slice(0, MAX_FILES));
       return;
     }
 
-    if (
-      validFiles.length !== incomingFiles.length
-    ) {
-      setMessage(
-        "Some files were skipped because they were unsupported or larger than 25 MB."
+    setFiles(uniqueFiles);
+
+    const warnings: string[] = [];
+
+    if (unsupportedFiles.length > 0) {
+      warnings.push(
+        `${unsupportedFiles.length} unsupported file${
+          unsupportedFiles.length === 1
+            ? " was"
+            : "s were"
+        } skipped`
       );
     }
 
-    setFiles(uniqueFiles);
+    if (oversizedFiles.length > 0) {
+      warnings.push(
+        `${oversizedFiles.length} file${
+          oversizedFiles.length === 1
+            ? " was"
+            : "s were"
+        } skipped because the current upload limit is 4 MB per photo`
+      );
+    }
+
+    if (warnings.length > 0) {
+      setState("error");
+      setMessage(`${warnings.join(". ")}.`);
+    }
   }
 
   function handleFileInput(
@@ -169,6 +284,7 @@ export default function UploadClient() {
     addFiles(
       Array.from(event.target.files ?? [])
     );
+
     event.target.value = "";
   }
 
@@ -176,6 +292,7 @@ export default function UploadClient() {
     event: DragEvent<HTMLDivElement>
   ) {
     event.preventDefault();
+
     addFiles(
       Array.from(event.dataTransfer.files)
     );
@@ -205,15 +322,28 @@ export default function UploadClient() {
       return;
     }
 
+    const oversizedFile = files.find(
+      (file) => file.size > MAX_FILE_SIZE
+    );
+
+    if (oversizedFile) {
+      setState("error");
+      setMessage(
+        `${oversizedFile.name} is larger than the current 4 MB upload limit.`
+      );
+      return;
+    }
+
     try {
       setState("uploading");
       setProgress(0);
       setResult(null);
       setMessage(
-        "Uploading photos to private storage..."
+        `Uploading photo 1 of ${files.length}...`
       );
 
-      const uploadedBlobs: UploadedBlob[] = [];
+      const uploadedBlobs: UploadedBlob[] =
+        [];
 
       for (
         let index = 0;
@@ -221,6 +351,12 @@ export default function UploadClient() {
         index += 1
       ) {
         const file = files[index];
+
+        setMessage(
+          `Uploading photo ${index + 1} of ${
+            files.length
+          }: ${file.name}`
+        );
 
         const pathname = [
           "uploads",
@@ -231,49 +367,45 @@ export default function UploadClient() {
         ].join("/");
 
         const formData = new FormData();
-          formData.append("file", file);
-          formData.append("pathname", pathname);
 
-          const uploadResponse = await fetch(
+        formData.append("file", file);
+        formData.append(
+          "pathname",
+          pathname
+        );
+
+        const uploadResponse =
+          await fetchWithTimeout(
             "/api/uploads/blob",
             {
               method: "POST",
               body: formData,
-            }
+            },
+            UPLOAD_TIMEOUT_MS,
+            `Upload timed out for ${file.name}. Try a smaller image or try again.`
           );
 
-          const responseText = await uploadResponse.text();
+        const uploadResult =
+          await readJsonResponse<BlobUploadResponse>(
+            uploadResponse,
+            `Failed to upload ${file.name}.`
+          );
 
-          let uploadResult: {
-            blob?: UploadedBlob;
-            error?: string;
-          };
+        if (!uploadResponse.ok) {
+          throw new Error(
+            uploadResult.error ||
+              `Failed to upload ${file.name}.`
+          );
+        }
 
-          try {
-            uploadResult = JSON.parse(responseText);
-          } catch {
-            throw new Error(
-              `Upload route returned ${uploadResponse.status}: ${responseText.slice(0, 200)}`
-            );
-          }
-
-          if (!uploadResponse.ok) {
-            throw new Error(
-              uploadResult.error ||
-                `Failed to upload ${file.name}.`
-            );
-          }
-
-          if (!uploadResult.blob) {
-            throw new Error(
-              `Upload succeeded but no blob was returned for ${file.name}.`
-            );
-          }
-
-          const blob = uploadResult.blob;
+        if (!uploadResult.blob) {
+          throw new Error(
+            `The upload route did not return storage information for ${file.name}.`
+          );
+        }
 
         uploadedBlobs.push({
-          ...blob,
+          ...uploadResult.blob,
           originalName: file.name,
           size: file.size,
           contentType:
@@ -295,34 +427,43 @@ export default function UploadClient() {
         "Extracting GPS coordinates and timestamps..."
       );
 
-      const response = await fetch(
-        "/api/uploads",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
+      const response =
+        await fetchWithTimeout(
+          "/api/uploads",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              blobs: uploadedBlobs.map(
+                (blob) => ({
+                  originalName:
+                    blob.originalName,
+                  pathname:
+                    blob.pathname,
+                  url: blob.url,
+                  contentType:
+                    blob.contentType ||
+                    "application/octet-stream",
+                  size: blob.size,
+                })
+              ),
+            }),
           },
-          body: JSON.stringify({
-            blobs: uploadedBlobs.map(
-              (blob) => ({
-                originalName:
-                  blob.originalName,
-                pathname: blob.pathname,
-                url: blob.url,
-                contentType:
-                  blob.contentType,
-                size: blob.size,
-              })
-            ),
-          }),
-        }
-      );
+          PROCESSING_TIMEOUT_MS,
+          "Photo metadata processing timed out. Try uploading fewer photos at once."
+        );
 
       const data =
-        (await response.json()) as
+        await readJsonResponse<
           | UploadResponse
-          | { error?: string };
+          | { error?: string }
+        >(
+          response,
+          "Photo processing failed."
+        );
 
       if (
         !response.ok ||
@@ -342,7 +483,11 @@ export default function UploadClient() {
       if (data.usablePhotoCount < 2) {
         setState("complete");
         setMessage(
-          `${data.batch.processedCount} photos were saved, but at least 2 photos with both GPS coordinates and timestamps are needed to detect trips.`
+          `${data.batch.processedCount} photo${
+            data.batch.processedCount === 1
+              ? " was"
+              : "s were"
+          } saved, but at least 2 photos with both GPS coordinates and timestamps are needed to detect trips.`
         );
         return;
       }
@@ -353,18 +498,23 @@ export default function UploadClient() {
       );
 
       const processingResponse =
-        await fetch(
+        await fetchWithTimeout(
           `/api/uploads/${data.batch.id}/process`,
           {
             method: "POST",
-          }
+          },
+          PROCESSING_TIMEOUT_MS,
+          "Trip detection timed out. Try processing fewer photos at once."
         );
 
       const processingData =
-        (await processingResponse.json()) as {
+        await readJsonResponse<{
           tripCount?: number;
           error?: string;
-        };
+        }>(
+          processingResponse,
+          "Server-side trip processing failed."
+        );
 
       if (!processingResponse.ok) {
         throw new Error(
@@ -457,9 +607,11 @@ export default function UploadClient() {
                 event.preventDefault()
               }
               onDrop={handleDrop}
-              onClick={() =>
-                inputRef.current?.click()
-              }
+              onClick={() => {
+                if (!isBusy) {
+                  inputRef.current?.click();
+                }
+              }}
               className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border-2 border-dashed border-emerald-400/30 bg-emerald-400/5 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-400/10"
             >
               <input
@@ -468,6 +620,7 @@ export default function UploadClient() {
                 multiple
                 accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.jpg,.jpeg,.png,.heic,.heif,.webp"
                 onChange={handleFileInput}
+                disabled={isBusy}
                 className="hidden"
               />
 
@@ -481,8 +634,9 @@ export default function UploadClient() {
 
               <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
                 Select up to {MAX_FILES} JPEG,
-                PNG, HEIC, or WebP photos. Each
-                file can be up to 25 MB.
+                PNG, HEIC, or WebP photos. The
+                current server-upload limit is
+                4 MB per photo.
               </p>
 
               <span className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white">
@@ -499,26 +653,28 @@ export default function UploadClient() {
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-400">
-                      {files.length} photos ·{" "}
-                      {(
-                        totalSize /
-                        1024 /
-                        1024
-                      ).toFixed(1)}{" "}
+                      {files.length} photo
+                      {files.length === 1
+                        ? ""
+                        : "s"}{" "}
+                      ·{" "}
+                      {formatMegabytes(
+                        totalSize
+                      )}{" "}
                       MB
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
+                    onClick={() => {
                       setFiles([]);
+                      setMessage("");
+                      setResult(null);
+                      setState("idle");
+                      setProgress(0);
                     }}
-                    disabled={
-                      state === "uploading" ||
-                      state === "processing"
-                    }
+                    disabled={isBusy}
                     className="text-sm font-medium text-slate-400 hover:text-white disabled:opacity-50"
                   >
                     Clear all
@@ -540,11 +696,9 @@ export default function UploadClient() {
                           </p>
 
                           <p className="text-xs text-slate-500">
-                            {(
-                              file.size /
-                              1024 /
-                              1024
-                            ).toFixed(1)}{" "}
+                            {formatMegabytes(
+                              file.size
+                            )}{" "}
                             MB
                           </p>
                         </div>
@@ -554,12 +708,7 @@ export default function UploadClient() {
                           onClick={() =>
                             removeFile(index)
                           }
-                          disabled={
-                            state ===
-                              "uploading" ||
-                            state ===
-                              "processing"
-                          }
+                          disabled={isBusy}
                           className="rounded-full p-1 text-slate-500 hover:bg-white/10 hover:text-white disabled:opacity-50"
                           aria-label={`Remove ${file.name}`}
                         >
@@ -573,10 +722,7 @@ export default function UploadClient() {
                 <button
                   type="button"
                   onClick={handleUpload}
-                  disabled={
-                    state === "uploading" ||
-                    state === "processing"
-                  }
+                  disabled={isBusy}
                   className="mt-6 w-full rounded-full bg-emerald-500 px-6 py-3.5 font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {state === "uploading"
@@ -727,7 +873,7 @@ function InfoCard({
   title,
   description,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
 }) {
