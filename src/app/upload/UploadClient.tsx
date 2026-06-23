@@ -72,8 +72,6 @@ const ACCEPTED_TYPES = [
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
 
-const router = useRouter();
-
 function isAcceptedPhoto(file: File) {
   const extension = file.name
     .split(".")
@@ -97,7 +95,8 @@ function sanitizeFilename(filename: string) {
     .replace(/-+/g, "-");
 }
 
-export default function UploadPage() {
+export default function UploadClient() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const { user, isLoaded } = useUser();
 
@@ -110,7 +109,11 @@ export default function UploadPage() {
     useState<UploadResponse | null>(null);
 
   const totalSize = useMemo(
-    () => files.reduce((sum, file) => sum + file.size, 0),
+    () =>
+      files.reduce(
+        (sum, file) => sum + file.size,
+        0
+      ),
     [files]
   );
 
@@ -119,12 +122,11 @@ export default function UploadPage() {
     setResult(null);
     setState("idle");
 
-    const validFiles = incomingFiles.filter((file) => {
-      return (
+    const validFiles = incomingFiles.filter(
+      (file) =>
         isAcceptedPhoto(file) &&
         file.size <= MAX_FILE_SIZE
-      );
-    });
+    );
 
     const uniqueFiles = [
       ...files,
@@ -135,7 +137,8 @@ export default function UploadPage() {
           (candidate) =>
             candidate.name === file.name &&
             candidate.size === file.size &&
-            candidate.lastModified === file.lastModified
+            candidate.lastModified ===
+              file.lastModified
         ) === index
       );
     });
@@ -149,7 +152,9 @@ export default function UploadPage() {
       return;
     }
 
-    if (validFiles.length !== incomingFiles.length) {
+    if (
+      validFiles.length !== incomingFiles.length
+    ) {
       setMessage(
         "Some files were skipped because they were unsupported or larger than 25 MB."
       );
@@ -161,19 +166,26 @@ export default function UploadPage() {
   function handleFileInput(
     event: ChangeEvent<HTMLInputElement>
   ) {
-    addFiles(Array.from(event.target.files ?? []));
+    addFiles(
+      Array.from(event.target.files ?? [])
+    );
     event.target.value = "";
   }
 
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
+  function handleDrop(
+    event: DragEvent<HTMLDivElement>
+  ) {
     event.preventDefault();
-    addFiles(Array.from(event.dataTransfer.files));
+    addFiles(
+      Array.from(event.dataTransfer.files)
+    );
   }
 
   function removeFile(index: number) {
     setFiles((currentFiles) =>
       currentFiles.filter(
-        (_, currentIndex) => currentIndex !== index
+        (_, currentIndex) =>
+          currentIndex !== index
       )
     );
   }
@@ -181,7 +193,9 @@ export default function UploadPage() {
   async function handleUpload() {
     if (!user?.id) {
       setState("error");
-      setMessage("You must be signed in to upload photos.");
+      setMessage(
+        "You must be signed in to upload photos."
+      );
       return;
     }
 
@@ -195,11 +209,17 @@ export default function UploadPage() {
       setState("uploading");
       setProgress(0);
       setResult(null);
-      setMessage("Uploading photos to private storage...");
+      setMessage(
+        "Uploading photos to private storage..."
+      );
 
       const uploadedBlobs: UploadedBlob[] = [];
 
-      for (let index = 0; index < files.length; index += 1) {
+      for (
+        let index = 0;
+        index < files.length;
+        index += 1
+      ) {
         const file = files[index];
 
         const pathname = [
@@ -210,23 +230,33 @@ export default function UploadPage() {
           )}`,
         ].join("/");
 
-        const blob = await upload(pathname, file, {
-          access: "private",
-          handleUploadUrl: "/api/uploads/blob",
-          multipart: file.size > 5 * 1024 * 1024,
-        });
+        const blob = await upload(
+          pathname,
+          file,
+          {
+            access: "private",
+            handleUploadUrl:
+              "/api/uploads/blob",
+            multipart:
+              file.size >
+              5 * 1024 * 1024,
+          }
+        );
 
         uploadedBlobs.push({
           ...blob,
           originalName: file.name,
           size: file.size,
           contentType:
-            file.type || "application/octet-stream",
+            file.type ||
+            "application/octet-stream",
         });
 
         setProgress(
           Math.round(
-            ((index + 1) / files.length) * 100
+            ((index + 1) /
+              files.length) *
+              100
           )
         );
       }
@@ -236,34 +266,47 @@ export default function UploadPage() {
         "Extracting GPS coordinates and timestamps..."
       );
 
-      const response = await fetch("/api/uploads", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          blobs: uploadedBlobs.map((blob) => ({
-            originalName: blob.originalName,
-            pathname: blob.pathname,
-            url: blob.url,
-            contentType: blob.contentType,
-            size: blob.size,
-          })),
-        }),
-      });
+      const response = await fetch(
+        "/api/uploads",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            blobs: uploadedBlobs.map(
+              (blob) => ({
+                originalName:
+                  blob.originalName,
+                pathname: blob.pathname,
+                url: blob.url,
+                contentType:
+                  blob.contentType,
+                size: blob.size,
+              })
+            ),
+          }),
+        }
+      );
 
-      const data = (await response.json()) as
-        | UploadResponse
-        | { error?: string };
+      const data =
+        (await response.json()) as
+          | UploadResponse
+          | { error?: string };
 
-      if (!response.ok || !("batch" in data)) {
+      if (
+        !response.ok ||
+        !("batch" in data)
+      ) {
         const errorMessage =
-        "error" in data && typeof data.error === "string"
-          ? data.error
-          : "Photo processing failed.";
+          "error" in data &&
+          typeof data.error === "string"
+            ? data.error
+            : "Photo processing failed.";
 
-      throw new Error(errorMessage);
-    }
+        throw new Error(errorMessage);
+      }
 
       setResult(data);
 
@@ -280,17 +323,19 @@ export default function UploadPage() {
         "Running server-side DBSCAN trip detection..."
       );
 
-      const processingResponse = await fetch(
-        `/api/uploads/${data.batch.id}/process`,
-        {
-          method: "POST",
-        }
-      );
+      const processingResponse =
+        await fetch(
+          `/api/uploads/${data.batch.id}/process`,
+          {
+            method: "POST",
+          }
+        );
 
-      const processingData = (await processingResponse.json()) as {
-        tripCount?: number;
-        error?: string;
-      };
+      const processingData =
+        (await processingResponse.json()) as {
+          tripCount?: number;
+          error?: string;
+        };
 
       if (!processingResponse.ok) {
         throw new Error(
@@ -299,16 +344,25 @@ export default function UploadPage() {
         );
       }
 
+      const tripCount =
+        processingData.tripCount ?? 0;
+
       setState("complete");
       setMessage(
-        `Created ${processingData.tripCount ?? 0} proposed trip${
-          processingData.tripCount === 1 ? "" : "s"
+        `Created ${tripCount} proposed trip${
+          tripCount === 1 ? "" : "s"
         }. Opening trip review...`
       );
 
-      router.push(`/review/${data.batch.id}`);
+      router.push(
+        `/review/${data.batch.id}`
+      );
     } catch (error) {
-      console.error("Photo upload failed:", error);
+      console.error(
+        "Photo upload failed:",
+        error
+      );
+
       setState("error");
       setMessage(
         error instanceof Error
@@ -341,7 +395,11 @@ export default function UploadPage() {
           <p className="text-sm text-slate-400">
             Signed in as{" "}
             <span className="text-slate-200">
-              {user?.primaryEmailAddress?.emailAddress}
+              {
+                user
+                  ?.primaryEmailAddress
+                  ?.emailAddress
+              }
             </span>
           </p>
         </nav>
@@ -356,8 +414,9 @@ export default function UploadPage() {
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-            Waypoint securely reads each photo&apos;s GPS
-            coordinates and capture time to reconstruct your
+            Waypoint securely reads each
+            photo&apos;s GPS coordinates and
+            capture time to reconstruct your
             travel history.
           </p>
         </header>
@@ -365,9 +424,13 @@ export default function UploadPage() {
         <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
             <div
-              onDragOver={(event) => event.preventDefault()}
+              onDragOver={(event) =>
+                event.preventDefault()
+              }
               onDrop={handleDrop}
-              onClick={() => inputRef.current?.click()}
+              onClick={() =>
+                inputRef.current?.click()
+              }
               className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border-2 border-dashed border-emerald-400/30 bg-emerald-400/5 p-8 text-center transition hover:border-emerald-300 hover:bg-emerald-400/10"
             >
               <input
@@ -388,8 +451,9 @@ export default function UploadPage() {
               </h2>
 
               <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                Select up to {MAX_FILES} JPEG, PNG, HEIC, or
-                WebP photos. Each file can be up to 25 MB.
+                Select up to {MAX_FILES} JPEG,
+                PNG, HEIC, or WebP photos. Each
+                file can be up to 25 MB.
               </p>
 
               <span className="mt-7 rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white">
@@ -404,9 +468,15 @@ export default function UploadPage() {
                     <h2 className="text-xl font-bold">
                       Selected photos
                     </h2>
+
                     <p className="mt-1 text-sm text-slate-400">
                       {files.length} photos ·{" "}
-                      {(totalSize / 1024 / 1024).toFixed(1)} MB
+                      {(
+                        totalSize /
+                        1024 /
+                        1024
+                      ).toFixed(1)}{" "}
+                      MB
                     </p>
                   </div>
 
@@ -427,36 +497,48 @@ export default function UploadPage() {
                 </div>
 
                 <div className="max-h-80 space-y-2 overflow-y-auto">
-                  {files.map((file, index) => (
-                    <div
-                      key={`${file.name}-${file.size}-${file.lastModified}`}
-                      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 p-3"
-                    >
-                      <FileImage className="h-5 w-5 shrink-0 text-emerald-300" />
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-200">
-                          {file.name}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {(file.size / 1024 / 1024).toFixed(1)} MB
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeFile(index)}
-                        disabled={
-                          state === "uploading" ||
-                          state === "processing"
-                        }
-                        className="rounded-full p-1 text-slate-500 hover:bg-white/10 hover:text-white disabled:opacity-50"
-                        aria-label={`Remove ${file.name}`}
+                  {files.map(
+                    (file, index) => (
+                      <div
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 p-3"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
+                        <FileImage className="h-5 w-5 shrink-0 text-emerald-300" />
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-200">
+                            {file.name}
+                          </p>
+
+                          <p className="text-xs text-slate-500">
+                            {(
+                              file.size /
+                              1024 /
+                              1024
+                            ).toFixed(1)}{" "}
+                            MB
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeFile(index)
+                          }
+                          disabled={
+                            state ===
+                              "uploading" ||
+                            state ===
+                              "processing"
+                          }
+                          className="rounded-full p-1 text-slate-500 hover:bg-white/10 hover:text-white disabled:opacity-50"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )
+                  )}
                 </div>
 
                 <button
@@ -471,7 +553,7 @@ export default function UploadPage() {
                   {state === "uploading"
                     ? `Uploading ${progress}%`
                     : state === "processing"
-                      ? "Reading photo metadata..."
+                      ? "Processing photos..."
                       : "Upload and process photos"}
                 </button>
               </div>
@@ -490,7 +572,8 @@ export default function UploadPage() {
                 <div className="flex items-start gap-3">
                   {state === "error" ? (
                     <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0" />
-                  ) : state === "complete" ? (
+                  ) : state ===
+                    "complete" ? (
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                   ) : (
                     <LoaderCircle className="mt-0.5 h-5 w-5 shrink-0 animate-spin" />
@@ -504,21 +587,27 @@ export default function UploadPage() {
 
           <aside className="space-y-4">
             <InfoCard
-              icon={<ShieldCheck className="h-5 w-5" />}
+              icon={
+                <ShieldCheck className="h-5 w-5" />
+              }
               title="Private by default"
               description="Your photos are stored privately and associated with your signed-in account."
             />
 
             <InfoCard
-              icon={<MapPin className="h-5 w-5" />}
+              icon={
+                <MapPin className="h-5 w-5" />
+              }
               title="Automatic metadata"
               description="Waypoint extracts GPS coordinates, capture dates, image dimensions, and available camera details."
             />
 
             <InfoCard
-              icon={<FileImage className="h-5 w-5" />}
+              icon={
+                <FileImage className="h-5 w-5" />
+              }
               title="Missing metadata"
-              description="Photos without GPS coordinates or timestamps remain saved and will appear in the future review screen."
+              description="Photos without GPS coordinates or timestamps remain saved and appear in the review workflow."
             />
           </aside>
         </div>
@@ -536,27 +625,44 @@ export default function UploadPage() {
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Stat
                 label="Selected"
-                value={result.batch.originalCount}
+                value={
+                  result.batch.originalCount
+                }
               />
+
               <Stat
                 label="Saved"
-                value={result.batch.processedCount}
+                value={
+                  result.batch.processedCount
+                }
               />
+
               <Stat
                 label="Ready for trips"
-                value={result.usablePhotoCount}
+                value={
+                  result.usablePhotoCount
+                }
               />
+
               <Stat
                 label="Duplicates"
-                value={result.duplicateCount}
+                value={
+                  result.duplicateCount
+                }
               />
             </div>
 
-            {result.batch.warningCount > 0 && (
+            {result.batch.warningCount >
+              0 && (
               <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-100">
-                {result.batch.warningCount} photo
-                {result.batch.warningCount === 1 ? "" : "s"} need
-                review because GPS coordinates or timestamps are
+                {result.batch.warningCount}{" "}
+                photo
+                {result.batch.warningCount ===
+                1
+                  ? ""
+                  : "s"}{" "}
+                need review because GPS
+                coordinates or timestamps are
                 missing.
               </div>
             )}
@@ -576,8 +682,13 @@ function Stat({
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <p className="text-sm text-slate-400">{label}</p>
-      <p className="mt-2 text-3xl font-bold">{value}</p>
+      <p className="text-sm text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-2 text-3xl font-bold">
+        {value}
+      </p>
     </div>
   );
 }
@@ -597,7 +708,9 @@ function InfoCard({
         {icon}
       </div>
 
-      <h3 className="font-bold">{title}</h3>
+      <h3 className="font-bold">
+        {title}
+      </h3>
 
       <p className="mt-2 text-sm leading-6 text-slate-400">
         {description}

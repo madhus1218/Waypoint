@@ -55,9 +55,7 @@ async function getOwnedBatch(
     include: {
       trips: {
         where: {
-          status: {
-            not: "ARCHIVED",
-          },
+          status: "PROPOSED",
         },
         orderBy: {
           startDate: "asc",
@@ -83,26 +81,17 @@ async function getOwnedBatch(
 }
 
 async function recalculateTrip(tripId: string) {
-  const photos = await prisma.photoAsset.findMany({
+  const allPhotos = await prisma.photoAsset.findMany({
     where: {
       tripId,
-      latitude: {
-        not: null,
-      },
-      longitude: {
-        not: null,
-      },
-      takenAt: {
-        not: null,
-      },
     },
     orderBy: {
       takenAt: "asc",
     },
   });
 
-  if (photos.length === 0) {
-    await prisma.trip.delete({
+  if (allPhotos.length === 0) {
+    await prisma.trip.deleteMany({
       where: {
         id: tripId,
       },
@@ -111,7 +100,7 @@ async function recalculateTrip(tripId: string) {
     return;
   }
 
-  const datedPhotos = photos.filter(
+  const validPhotos = allPhotos.filter(
     (
       photo
     ): photo is typeof photo & {
@@ -124,36 +113,36 @@ async function recalculateTrip(tripId: string) {
       photo.longitude !== null
   );
 
-  if (datedPhotos.length === 0) {
+  if (validPhotos.length === 0) {
     return;
   }
 
-  const latitude =
-    datedPhotos.reduce(
+  const centerLat =
+    validPhotos.reduce(
       (sum, photo) => sum + photo.latitude,
       0
-    ) / datedPhotos.length;
+    ) / validPhotos.length;
 
-  const longitude =
-    datedPhotos.reduce(
+  const centerLng =
+    validPhotos.reduce(
       (sum, photo) => sum + photo.longitude,
       0
-    ) / datedPhotos.length;
+    ) / validPhotos.length;
 
   await prisma.trip.update({
     where: {
       id: tripId,
     },
     data: {
-      startDate: datedPhotos[0].takenAt,
+      startDate: validPhotos[0].takenAt,
       endDate:
-        datedPhotos[datedPhotos.length - 1].takenAt,
-      centerLat: latitude,
-      centerLng: longitude,
+        validPhotos[validPhotos.length - 1].takenAt,
+      centerLat,
+      centerLng,
       confidence:
-        datedPhotos.length >= 5
+        validPhotos.length >= 5
           ? 0.9
-          : datedPhotos.length >= 3
+          : validPhotos.length >= 3
             ? 0.7
             : 0.5,
     },
@@ -262,6 +251,7 @@ export async function PATCH(
           id: action.tripId,
           ownerId: userId,
           uploadBatchId,
+          status: "PROPOSED",
         },
         data: {
           title: action.title,
@@ -287,6 +277,7 @@ export async function PATCH(
             id: action.photoId,
             ownerId: userId,
             uploadBatchId,
+            status: "PROPOSED",
           },
           select: {
             id: true,
@@ -300,6 +291,7 @@ export async function PATCH(
             id: action.targetTripId,
             ownerId: userId,
             uploadBatchId,
+            status: "PROPOSED",
           },
           select: {
             id: true,
@@ -407,6 +399,7 @@ export async function PATCH(
           id: action.tripId,
           ownerId: userId,
           uploadBatchId,
+          status: "PROPOSED",
         },
         include: {
           photos: {
