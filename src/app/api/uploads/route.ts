@@ -26,19 +26,14 @@ const createUploadSchema = z.object({
 });
 
 async function readPrivateBlob(pathname: string) {
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-
-  if (!blobToken) {
-    throw new Error("BLOB_READ_WRITE_TOKEN is missing.");
-  }
-
   const result = await get(pathname, {
     access: "private",
-    token: blobToken,
   });
 
   if (!result || !result.stream) {
-    throw new Error(`Could not read uploaded file: ${pathname}`);
+    throw new Error(
+      `Could not read uploaded file: ${pathname}`
+    );
   }
 
   const arrayBuffer = await new Response(

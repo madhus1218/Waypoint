@@ -34,12 +34,6 @@ export async function POST(
           );
         }
 
-        if (!process.env.BLOB_READ_WRITE_TOKEN) {
-          throw new Error(
-            "BLOB_READ_WRITE_TOKEN is missing."
-          );
-        }
-
         const expectedPrefix = `uploads/${userId}/`;
 
         if (!pathname.startsWith(expectedPrefix)) {
