@@ -84,7 +84,7 @@ const ACCEPTED_TYPES = [
   "image/webp",
 ];
 
-const MAX_FILE_SIZE = 4 * 1024 * 1024;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
 const UPLOAD_TIMEOUT_MS = 45_000;
 const PROCESSING_TIMEOUT_MS = 120_000;

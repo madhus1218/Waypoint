@@ -13,7 +13,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "image/heif",
 ]);
 
-const MAX_FILE_SIZE = 4 * 1024 * 1024;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 export async function POST(request: Request) {
   console.log("UPLOAD ROUTE REACHED");
