@@ -99,10 +99,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const blob = await put(pathname, file, {
-      access: "private",
-      addRandomSuffix: true,
-    });
+    const blobToken =
+    process.env.BLOB_READ_WRITE_TOKEN ||
+    process.env.waypoint_BLOB_READ_WRITE_TOKEN;
+
+  if (!blobToken) {
+    return NextResponse.json(
+      {
+        error:
+          "Missing Blob token. Add BLOB_READ_WRITE_TOKEN or waypoint_BLOB_READ_WRITE_TOKEN to .env.local and restart the dev server.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+
+  const blob = await put(pathname, file, {
+    access: "private",
+    addRandomSuffix: true,
+    token: blobToken,
+  });
 
     return NextResponse.json({
       blob,
