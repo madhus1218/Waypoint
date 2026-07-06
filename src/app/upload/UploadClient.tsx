@@ -175,7 +175,7 @@ async function fetchWithTimeout(
 export default function UploadClient() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const { user, isLoaded } = useUser();
+  const { user, isLoaded, isSignedIn } = useUser();
 
   const [files, setFiles] = useState<File[]>([]);
   const [state, setState] =
@@ -308,11 +308,15 @@ export default function UploadClient() {
   }
 
   async function handleUpload() {
-    if (!user?.id) {
+    if (!isLoaded) {
       setState("error");
-      setMessage(
-        "You must be signed in to upload photos."
-      );
+      setMessage("Authentication is still loading. Try again in a second.");
+      return;
+    }
+
+    if (!isSignedIn || !user?.id) {
+      setState("error");
+      setMessage("You must be signed in to upload photos.");
       return;
     }
 
