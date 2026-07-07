@@ -180,6 +180,15 @@ export async function POST(request: Request) {
 
         try {
           metadata = await extractPhotoMetadata(buffer);
+
+          console.log("Metadata result:", {
+            filename: file.name,
+            type: file.type,
+            latitude: metadata.latitude,
+            longitude: metadata.longitude,
+            takenAt: metadata.takenAt,
+            warning: metadata.warning,
+          });
         } catch (metadataError) {
           console.warn(`Could not extract EXIF from ${file.name}:`, metadataError);
 
