@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
-import { get } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { extractPhotoMetadata } from "@/lib/photoMetadata";
@@ -10,48 +8,56 @@ import { extractPhotoMetadata } from "@/lib/photoMetadata";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const uploadedBlobSchema = z.object({
-  originalName: z.string().min(1).max(500),
-  pathname: z.string().min(1),
-  url: z.string().url(),
-  contentType: z.string().min(1),
-  size: z.number().int().positive(),
-});
+const ALLOWED_CONTENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
 
-const createUploadSchema = z.object({
-  blobs: z
-    .array(uploadedBlobSchema)
-    .min(1)
-    .max(100),
-});
+const ALLOWED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "heif",
+]);
 
-async function readPrivateBlob(pathname: string) {
-  const blobToken =
-    process.env.BLOB_READ_WRITE_TOKEN ||
-    process.env.waypoint_BLOB_READ_WRITE_TOKEN;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILES = 100;
 
-  if (!blobToken) {
-    throw new Error(
-      "Missing Blob token. Add BLOB_READ_WRITE_TOKEN or waypoint_BLOB_READ_WRITE_TOKEN to .env.local and restart the dev server."
-    );
-  }
+function sanitizeFilename(filename: string) {
+  return filename
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 180);
+}
 
-  const result = await get(pathname, {
-    access: "private",
-    token: blobToken,
-  });
+function isAcceptedPhoto(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
 
-  if (!result || !result.stream) {
-    throw new Error(
-      `Could not read uploaded file: ${pathname}`
-    );
-  }
+  return (
+    ALLOWED_CONTENT_TYPES.has(file.type) ||
+    (extension !== undefined && ALLOWED_EXTENSIONS.has(extension))
+  );
+}
 
-  const arrayBuffer = await new Response(
-    result.stream
-  ).arrayBuffer();
-
-  return Buffer.from(arrayBuffer);
+function serializePhoto(photo: {
+  id: string;
+  filename: string;
+  latitude: number | null;
+  longitude: number | null;
+  takenAt: Date | null;
+  hasGps: boolean;
+  hasTimestamp: boolean;
+  warning: string | null;
+}) {
+  return {
+    ...photo,
+    takenAt: photo.takenAt?.toISOString() ?? null,
+  };
 }
 
 export async function POST(request: Request) {
@@ -64,47 +70,83 @@ export async function POST(request: Request) {
       },
       {
         status: 401,
-      }
+      },
     );
   }
 
   try {
-    const parsedBody = createUploadSchema.safeParse(
-      await request.json()
-    );
+    const contentType = request.headers.get("content-type") ?? "";
 
-    if (!parsedBody.success) {
+    if (!contentType.includes("multipart/form-data")) {
       return NextResponse.json(
         {
-          error: "Invalid upload data.",
-          details: parsedBody.error.flatten(),
+          error:
+            "Upload photos as multipart/form-data with one or more files named `files`.",
         },
         {
           status: 400,
-        }
+        },
       );
     }
 
-    const expectedPrefix = `uploads/${userId}/`;
+    const formData = await request.formData();
+    const files = formData
+      .getAll("files")
+      .filter((entry): entry is File => entry instanceof File);
 
-    for (const blob of parsedBody.data.blobs) {
-      if (!blob.pathname.startsWith(expectedPrefix)) {
-        return NextResponse.json(
-          {
-            error: "One or more uploaded files are invalid.",
-          },
-          {
-            status: 403,
-          }
-        );
-      }
+    if (files.length === 0) {
+      return NextResponse.json(
+        {
+          error: "Select at least one photo.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (files.length > MAX_FILES) {
+      return NextResponse.json(
+        {
+          error: `You can upload up to ${MAX_FILES} photos at a time.`,
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const invalidFile = files.find((file) => !isAcceptedPhoto(file));
+
+    if (invalidFile) {
+      return NextResponse.json(
+        {
+          error: `Unsupported file type for ${invalidFile.name}. Upload JPG, PNG, WEBP, HEIC, or HEIF photos.`,
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const oversizedFile = files.find((file) => file.size > MAX_FILE_SIZE);
+
+    if (oversizedFile) {
+      return NextResponse.json(
+        {
+          error: `${oversizedFile.name} is larger than the 25 MB upload limit.`,
+        },
+        {
+          status: 400,
+        },
+      );
     }
 
     const uploadBatch = await prisma.uploadBatch.create({
       data: {
         ownerId: userId,
         status: "PROCESSING",
-        originalCount: parsedBody.data.blobs.length,
+        originalCount: files.length,
       },
     });
 
@@ -113,23 +155,21 @@ export async function POST(request: Request) {
     let duplicateCount = 0;
 
     try {
-      for (const blob of parsedBody.data.blobs) {
-        const buffer = await readPrivateBlob(blob.pathname);
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const buffer = Buffer.from(await file.arrayBuffer());
 
-        const checksum = createHash("sha256")
-          .update(buffer)
-          .digest("hex");
+        const checksum = createHash("sha256").update(buffer).digest("hex");
 
-        const existingPhoto =
-          await prisma.photoAsset.findFirst({
-            where: {
-              ownerId: userId,
-              checksum,
-            },
-            select: {
-              id: true,
-            },
-          });
+        const existingPhoto = await prisma.photoAsset.findFirst({
+          where: {
+            ownerId: userId,
+            checksum,
+          },
+          select: {
+            id: true,
+          },
+        });
 
         if (existingPhoto) {
           duplicateCount += 1;
@@ -141,10 +181,7 @@ export async function POST(request: Request) {
         try {
           metadata = await extractPhotoMetadata(buffer);
         } catch (metadataError) {
-          console.warn(
-            `Could not extract EXIF from ${blob.originalName}:`,
-            metadataError
-          );
+          console.warn(`Could not extract EXIF from ${file.name}:`, metadataError);
 
           metadata = {
             latitude: null,
@@ -166,11 +203,11 @@ export async function POST(request: Request) {
           data: {
             ownerId: userId,
             uploadBatchId: uploadBatch.id,
-            filename: blob.originalName,
-            pathname: blob.pathname,
-            blobUrl: blob.url,
-            mimeType: blob.contentType,
-            fileSize: blob.size,
+            filename: file.name,
+            pathname: `metadata-only/${userId}/${uploadBatch.id}/${index}-${sanitizeFilename(file.name)}`,
+            blobUrl: "metadata-only",
+            mimeType: file.type || "application/octet-stream",
+            fileSize: file.size,
             checksum,
             latitude: metadata.latitude,
             longitude: metadata.longitude,
@@ -179,9 +216,7 @@ export async function POST(request: Request) {
             height: metadata.height,
             cameraMake: metadata.cameraMake,
             cameraModel: metadata.cameraModel,
-            hasGps:
-              metadata.latitude !== null &&
-              metadata.longitude !== null,
+            hasGps: metadata.latitude !== null && metadata.longitude !== null,
             hasTimestamp: metadata.takenAt !== null,
             warning: metadata.warning,
           },
@@ -200,39 +235,47 @@ export async function POST(request: Request) {
         });
       }
 
-      const usablePhotoCount =
-        await prisma.photoAsset.count({
-          where: {
-            uploadBatchId: uploadBatch.id,
-            hasGps: true,
-            hasTimestamp: true,
-          },
-        });
+      const usablePhotoCount = await prisma.photoAsset.count({
+        where: {
+          uploadBatchId: uploadBatch.id,
+          hasGps: true,
+          hasTimestamp: true,
+        },
+      });
 
-      const finalBatch =
-        await prisma.uploadBatch.update({
-          where: {
-            id: uploadBatch.id,
-          },
-          data: {
-            processedCount,
-            warningCount,
-            status:
-              usablePhotoCount >= 2
-                ? "UPLOADED"
-                : "REVIEW_REQUIRED",
-          },
-          include: {
-            photos: {
-              orderBy: {
-                takenAt: "asc",
-              },
+      const finalBatch = await prisma.uploadBatch.update({
+        where: {
+          id: uploadBatch.id,
+        },
+        data: {
+          processedCount,
+          warningCount,
+          status: usablePhotoCount >= 2 ? "UPLOADED" : "REVIEW_REQUIRED",
+        },
+        include: {
+          photos: {
+            orderBy: {
+              takenAt: "asc",
+            },
+            select: {
+              id: true,
+              filename: true,
+              latitude: true,
+              longitude: true,
+              takenAt: true,
+              hasGps: true,
+              hasTimestamp: true,
+              warning: true,
             },
           },
-        });
+        },
+      });
 
       return NextResponse.json({
-        batch: finalBatch,
+        batch: {
+          ...finalBatch,
+          photos: finalBatch.photos.map(serializePhoto),
+        },
         duplicateCount,
         usablePhotoCount,
       });
@@ -264,7 +307,7 @@ export async function POST(request: Request) {
       },
       {
         status: 500,
-      }
+      },
     );
   }
 }
@@ -279,7 +322,7 @@ export async function GET() {
       },
       {
         status: 401,
-      }
+      },
     );
   }
 

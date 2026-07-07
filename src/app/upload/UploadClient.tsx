@@ -268,7 +268,7 @@ export default function UploadClient() {
           oversizedFiles.length === 1
             ? " was"
             : "s were"
-        } skipped because the current upload limit is 4 MB per photo`
+        } skipped because the current upload limit is 25 MB per photo`
       );
     }
 
@@ -333,151 +333,52 @@ export default function UploadClient() {
     if (oversizedFile) {
       setState("error");
       setMessage(
-        `${oversizedFile.name} is larger than the current 4 MB upload limit.`
+        `${oversizedFile.name} is larger than the current 25 MB upload limit.`
       );
       return;
     }
 
     try {
       setState("uploading");
-      setProgress(0);
+      setProgress(10);
       setResult(null);
       setMessage(
-        `Uploading photo 1 of ${files.length}...`
+        `Uploading and reading metadata from ${files.length} photo${
+          files.length === 1 ? "" : "s"
+        }...`
       );
 
-      const uploadedBlobs: UploadedBlob[] =
-        [];
+      const formData = new FormData();
 
-      for (
-        let index = 0;
-        index < files.length;
-        index += 1
-      ) {
-        const file = files[index];
-
-        setMessage(
-          `Uploading photo ${index + 1} of ${
-            files.length
-          }: ${file.name}`
-        );
-
-        const pathname = [
-          "uploads",
-          user.id,
-          `${Date.now()}-${index}-${sanitizeFilename(
-            file.name
-          )}`,
-        ].join("/");
-
-        const formData = new FormData();
-
-        formData.append("file", file);
-        formData.append(
-          "pathname",
-          pathname
-        );
-
-        const uploadResponse =
-          await fetchWithTimeout(
-            "/api/uploads/blob",
-            {
-              method: "POST",
-              body: formData,
-            },
-            UPLOAD_TIMEOUT_MS,
-            `Upload timed out for ${file.name}. Try a smaller image or try again.`
-          );
-
-        const uploadResult =
-          await readJsonResponse<BlobUploadResponse>(
-            uploadResponse,
-            `Failed to upload ${file.name}.`
-          );
-
-        if (!uploadResponse.ok) {
-          throw new Error(
-            uploadResult.error ||
-              `Failed to upload ${file.name}.`
-          );
-        }
-
-        if (!uploadResult.blob) {
-          throw new Error(
-            `The upload route did not return storage information for ${file.name}.`
-          );
-        }
-
-        uploadedBlobs.push({
-          ...uploadResult.blob,
-          originalName: file.name,
-          size: file.size,
-          contentType:
-            file.type ||
-            "application/octet-stream",
-        });
-
-        setProgress(
-          Math.round(
-            ((index + 1) /
-              files.length) *
-              100
-          )
-        );
+      for (const file of files) {
+        formData.append("files", file, file.name);
       }
 
-      setState("processing");
-      setMessage(
-        "Extracting GPS coordinates and timestamps..."
+      const response = await fetchWithTimeout(
+        "/api/uploads",
+        {
+          method: "POST",
+          body: formData,
+        },
+        PROCESSING_TIMEOUT_MS,
+        "Photo upload and metadata extraction timed out. Try uploading fewer photos at once."
       );
 
-      const response =
-        await fetchWithTimeout(
-          "/api/uploads",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              blobs: uploadedBlobs.map(
-                (blob) => ({
-                  originalName:
-                    blob.originalName,
-                  pathname:
-                    blob.pathname,
-                  url: blob.url,
-                  contentType:
-                    blob.contentType ||
-                    "application/octet-stream",
-                  size: blob.size,
-                })
-              ),
-            }),
-          },
-          PROCESSING_TIMEOUT_MS,
-          "Photo metadata processing timed out. Try uploading fewer photos at once."
-        );
+      setProgress(65);
 
-      const data =
-        await readJsonResponse<
-          | UploadResponse
-          | { error?: string }
-        >(
-          response,
-          "Photo processing failed."
-        );
+      const data = await readJsonResponse<
+        | UploadResponse
+        | { error?: string }
+      >(
+        response,
+        "Photo upload failed."
+      );
 
-      if (
-        !response.ok ||
-        !("batch" in data)
-      ) {
+      if (!response.ok || !("batch" in data)) {
         const errorMessage =
-          "error" in data &&
-          typeof data.error === "string"
+          "error" in data && typeof data.error === "string"
             ? data.error
-            : "Photo processing failed.";
+            : "Photo upload failed.";
 
         throw new Error(errorMessage);
       }
@@ -486,71 +387,59 @@ export default function UploadClient() {
 
       if (data.usablePhotoCount < 2) {
         setState("complete");
+        setProgress(100);
         setMessage(
           `${data.batch.processedCount} photo${
-            data.batch.processedCount === 1
-              ? " was"
-              : "s were"
+            data.batch.processedCount === 1 ? " was" : "s were"
           } saved, but at least 2 photos with both GPS coordinates and timestamps are needed to detect trips.`
         );
         return;
       }
 
       setState("processing");
-      setMessage(
-        "Running server-side DBSCAN trip detection..."
+      setProgress(80);
+      setMessage("Running DBSCAN trip detection...");
+
+      const processingResponse = await fetchWithTimeout(
+        `/api/uploads/${data.batch.id}/process`,
+        {
+          method: "POST",
+        },
+        PROCESSING_TIMEOUT_MS,
+        "Trip detection timed out. Try processing fewer photos at once."
       );
 
-      const processingResponse =
-        await fetchWithTimeout(
-          `/api/uploads/${data.batch.id}/process`,
-          {
-            method: "POST",
-          },
-          PROCESSING_TIMEOUT_MS,
-          "Trip detection timed out. Try processing fewer photos at once."
-        );
-
-      const processingData =
-        await readJsonResponse<{
-          tripCount?: number;
-          error?: string;
-        }>(
-          processingResponse,
-          "Server-side trip processing failed."
-        );
+      const processingData = await readJsonResponse<{
+        tripCount?: number;
+        error?: string;
+      }>(
+        processingResponse,
+        "Server-side trip processing failed."
+      );
 
       if (!processingResponse.ok) {
         throw new Error(
-          processingData.error ||
-            "Server-side trip processing failed."
+          processingData.error || "Server-side trip processing failed."
         );
       }
 
-      const tripCount =
-        processingData.tripCount ?? 0;
+      const tripCount = processingData.tripCount ?? 0;
 
       setState("complete");
+      setProgress(100);
       setMessage(
         `Created ${tripCount} proposed trip${
           tripCount === 1 ? "" : "s"
         }. Opening trip review...`
       );
 
-      router.push(
-        `/review/${data.batch.id}`
-      );
+      router.push(`/review/${data.batch.id}`);
     } catch (error) {
-      console.error(
-        "Photo upload failed:",
-        error
-      );
+      console.error("Photo upload failed:", error);
 
       setState("error");
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not upload photos."
+        error instanceof Error ? error.message : "Could not upload photos."
       );
     }
   }

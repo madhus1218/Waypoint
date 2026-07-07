@@ -1,45 +1,42 @@
+from __future__ import annotations
+
+import argparse
 import json
-import math
-from pathlib import Path
+import sys
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 
-
 EARTH_RADIUS_KM = 6371.0088
 
 
-def load_points(csv_path: str) -> pd.DataFrame:
-    """Load travel metadata from a CSV file."""
-    df = pd.read_csv(csv_path)
+def load_points(points: list[dict[str, Any]]) -> pd.DataFrame:
+    df = pd.DataFrame(points)
 
-    required_columns = {"filename", "latitude", "longitude", "timestamp"}
+    required_columns = {"id", "latitude", "longitude", "timestamp"}
     missing_columns = required_columns - set(df.columns)
 
     if missing_columns:
-        raise ValueError(f"Missing required columns: {missing_columns}")
+        raise ValueError(f"Missing required columns: {sorted(missing_columns)}")
 
     df = df.dropna(subset=["latitude", "longitude", "timestamp"]).copy()
-    df["latitude"] = df["latitude"].astype(float)
-    df["longitude"] = df["longitude"].astype(float)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
+    df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
 
-    df = df.dropna(subset=["timestamp"]).copy()
+    df = df.dropna(subset=["latitude", "longitude", "timestamp"]).copy()
+    df = df[
+        df["latitude"].between(-90, 90) & df["longitude"].between(-180, 180)
+    ].copy()
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     return df
 
 
-def run_dbscan(df: pd.DataFrame, radius_km: float = 80, min_samples: int = 1) -> pd.DataFrame:
-    """
-    Cluster GPS points using DBSCAN with haversine distance.
-
-    radius_km controls how close points need to be to belong to the same trip.
-    min_samples=1 allows small trips with only one photo point.
-    """
+def run_dbscan(df: pd.DataFrame, radius_km: float, min_samples: int) -> pd.DataFrame:
     coords_radians = np.radians(df[["latitude", "longitude"]].to_numpy())
-
     epsilon = radius_km / EARTH_RADIUS_KM
 
     model = DBSCAN(
@@ -49,81 +46,92 @@ def run_dbscan(df: pd.DataFrame, radius_km: float = 80, min_samples: int = 1) ->
         algorithm="ball_tree",
     )
 
-    df = df.copy()
-    df["cluster_id"] = model.fit_predict(coords_radians)
+    clustered = df.copy()
+    clustered["cluster_id"] = model.fit_predict(coords_radians)
+    return clustered
 
-    return df
+
+def split_by_time(group: pd.DataFrame, max_time_gap_hours: float) -> list[pd.DataFrame]:
+    group = group.sort_values("timestamp").reset_index(drop=True)
+
+    if group.empty:
+        return []
+
+    visits: list[list[int]] = [[0]]
+
+    for index in range(1, len(group)):
+        previous_time = group.loc[index - 1, "timestamp"]
+        current_time = group.loc[index, "timestamp"]
+        gap_hours = (current_time - previous_time).total_seconds() / 3600
+
+        if gap_hours > max_time_gap_hours:
+            visits.append([index])
+        else:
+            visits[-1].append(index)
+
+    return [group.iloc[indexes].copy() for indexes in visits]
 
 
-def build_trip_summary(df: pd.DataFrame) -> list[dict]:
-    """Convert clustered points into trip summaries."""
-    trips = []
-
+def build_clusters(df: pd.DataFrame, max_time_gap_hours: float, min_samples: int) -> list[dict[str, Any]]:
+    clusters: list[dict[str, Any]] = []
     clustered = df[df["cluster_id"] != -1]
 
-    for cluster_id, group in clustered.groupby("cluster_id"):
-        group = group.sort_values("timestamp")
+    for _, group in clustered.groupby("cluster_id"):
+        for visit in split_by_time(group, max_time_gap_hours):
+            if len(visit) < min_samples:
+                continue
 
-        avg_latitude = group["latitude"].mean()
-        avg_longitude = group["longitude"].mean()
+            visit = visit.sort_values("timestamp")
 
-        trip = {
-            "cluster_id": int(cluster_id),
-            "title": f"Detected Trip {int(cluster_id) + 1}",
-            "photo_count": int(len(group)),
-            "start_date": group["timestamp"].min().isoformat(),
-            "end_date": group["timestamp"].max().isoformat(),
-            "center": {
-                "latitude": round(float(avg_latitude), 6),
-                "longitude": round(float(avg_longitude), 6),
-            },
-            "points": [
+            clusters.append(
                 {
-                    "filename": row["filename"],
-                    "latitude": float(row["latitude"]),
-                    "longitude": float(row["longitude"]),
-                    "timestamp": row["timestamp"].isoformat(),
+                    "latitude": float(visit["latitude"].mean()),
+                    "longitude": float(visit["longitude"].mean()),
+                    "startDate": visit["timestamp"].min().isoformat(),
+                    "endDate": visit["timestamp"].max().isoformat(),
+                    "points": [
+                        {
+                            "filename": str(row["id"]),
+                            "latitude": float(row["latitude"]),
+                            "longitude": float(row["longitude"]),
+                            "timestamp": row["timestamp"].isoformat(),
+                        }
+                        for _, row in visit.iterrows()
+                    ],
                 }
-                for _, row in group.iterrows()
-            ],
-        }
+            )
 
-        trips.append(trip)
-
-    trips = sorted(trips, key=lambda trip: trip["start_date"])
-
-    return trips
+    return sorted(clusters, key=lambda cluster: cluster["startDate"])
 
 
-def save_output(trips: list[dict], output_path: str) -> None:
-    """Save trip summaries as JSON."""
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+def cluster_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    radius_km = float(payload.get("radius_km", 80))
+    min_samples = int(payload.get("min_samples", 2))
+    max_time_gap_hours = float(payload.get("max_time_gap_hours", 72))
 
-    with output_file.open("w", encoding="utf-8") as file:
-        json.dump(trips, file, indent=2)
+    df = load_points(payload.get("points", []))
+
+    if len(df) < min_samples:
+        return {"clusters": []}
+
+    clustered = run_dbscan(df, radius_km=radius_km, min_samples=min_samples)
+    clusters = build_clusters(clustered, max_time_gap_hours, min_samples)
+
+    return {"clusters": clusters}
 
 
 def main() -> None:
-    input_path = "ml/sample_data.csv"
-    output_path = "ml/clustered_trips.json"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stdin", action="store_true")
+    args = parser.parse_args()
 
-    df = load_points(input_path)
-    clustered_df = run_dbscan(df, radius_km=80, min_samples=1)
-    trips = build_trip_summary(clustered_df)
+    if not args.stdin:
+        raise SystemExit("Use --stdin so Waypoint can pass JSON from the API route.")
 
-    save_output(trips, output_path)
-
-    print(f"Loaded {len(df)} photo metadata points")
-    print(f"Detected {len(trips)} trip clusters")
-    print(f"Saved output to {output_path}")
-
-    for trip in trips:
-        print(
-            f"- {trip['title']}: {trip['photo_count']} photos, "
-            f"{trip['start_date']} → {trip['end_date']}"
-        )
+    payload = json.loads(sys.stdin.read())
+    print(json.dumps(cluster_payload(payload)))
 
 
 if __name__ == "__main__":
     main()
+

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
@@ -16,6 +17,55 @@ type RouteContext = {
     id: string;
   }>;
 };
+
+
+function inferTripsWithPython(points: GeoPoint[]) {
+  const payload = {
+    points: points.map((point) => ({
+      id: point.filename,
+      latitude: point.latitude,
+      longitude: point.longitude,
+      timestamp: point.timestamp,
+    })),
+    radius_km: 80,
+    min_samples: 2,
+    max_time_gap_hours: 72,
+  };
+
+  const runPython = (command: string) =>
+    spawnSync(command, ["ml/cluster_trips.py", "--stdin"], {
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+
+  let result = runPython("python3");
+
+  if (result.error || result.status !== 0) {
+    result = runPython("python");
+  }
+
+  if (result.error || result.status !== 0) {
+    console.warn(
+      "Python scikit-learn clustering failed. Falling back to TypeScript DBSCAN.",
+      result.error ?? result.stderr,
+    );
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout) as { clusters?: unknown };
+
+    if (!Array.isArray(parsed.clusters)) {
+      return null;
+    }
+
+    return parsed.clusters as ReturnType<typeof inferTripsWithDbscan>;
+  } catch (error) {
+    console.warn("Could not parse Python clustering output:", error);
+    return null;
+  }
+}
 
 function confidenceForPhotoCount(photoCount: number) {
   if (photoCount >= 8) {
@@ -144,18 +194,22 @@ export async function POST(
       },
     });
 
-    const points: GeoPoint[] = batch.photos.map((photo) => ({
+    const points: GeoPoint[] = batch.photos.map((photo: any) => ({
       latitude: photo.latitude as number,
       longitude: photo.longitude as number,
       timestamp: (photo.takenAt as Date).toISOString(),
       filename: photo.id,
     }));
 
-    const clusters = inferTripsWithDbscan(points, {
-      epsilonMiles: 50,
-      minPoints: 2,
-      maxTimeGapHours: 72,
-    });
+    const pythonClusters = inferTripsWithPython(points);
+
+    const clusters =
+      pythonClusters ??
+      inferTripsWithDbscan(points, {
+        epsilonMiles: 50,
+        minPoints: 2,
+        maxTimeGapHours: 72,
+      });
 
     if (clusters.length === 0) {
       await prisma.uploadBatch.update({
