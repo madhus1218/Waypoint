@@ -222,9 +222,9 @@ export function inferTripsWithDbscan(
   options: DbscanOptions = {},
 ): TripCluster[] {
   const {
-    epsilonMiles = 50,
+    epsilonMiles = 150,
     minPoints = 2,
-    maxTimeGapHours = 72,
+    maxTimeGapHours = 168,
   } = options;
 
   const validPoints = points.filter((point) => {
