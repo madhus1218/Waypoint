@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { getAnonymousOwnerId } from "@/lib/anonymousUser";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -86,9 +85,7 @@ export default function TripsPage() {
       setIsLoading(true);
       setError("");
 
-      const ownerId = getAnonymousOwnerId();
-
-      const response = await fetch(`/api/trips?ownerId=${ownerId}`, {
+      const response = await fetch("/api/trips", {
         cache: "no-store",
       });
 
@@ -176,15 +173,15 @@ export default function TripsPage() {
           <h1 className="text-3xl font-bold">No saved trips yet.</h1>
 
           <p className="mt-4 leading-7 text-slate-300">
-            Upload a CSV, generate trips, and save them to build your Waypoint
-            travel history.
+            Upload photos, let Waypoint detect your trips, and confirm them to
+            build your travel history.
           </p>
 
           <Link
             href="/upload"
             className="mt-7 inline-flex rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400"
           >
-            Upload CSV
+            Upload Photos
           </Link>
         </section>
       </main>
