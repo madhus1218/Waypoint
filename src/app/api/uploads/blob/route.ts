@@ -28,7 +28,6 @@ type UploadClientPayload = {
 export async function POST(request: Request) {
   try {
     const blobToken =
-      process.env.BLOB_READ_WRITE_TOKEN ??
       process.env.waypoint_BLOB_READ_WRITE_TOKEN;
 
     if (!blobToken) {
