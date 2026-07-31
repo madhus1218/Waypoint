@@ -1,298 +1,79 @@
 "use client";
 
-import "leaflet/dist/leaflet.css";
+import { GoogleMap, InfoWindowF, MarkerF, PolylineF, useJsApiLoader } from "@react-google-maps/api";
+import { useMemo, useState } from "react";
 
-import L from "leaflet";
-import { useEffect, useMemo } from "react";
-import {
-  MapContainer,
-  Marker,
-  Polyline,
-  Popup,
-  TileLayer,
-  useMap,
-} from "react-leaflet";
-
-type RoutePoint = {
+type MapPoint = {
   id?: string;
   filename?: string | null;
-  latitude: string | number;
-  longitude: string | number;
-  timestamp?: string;
-  takenAt?: string;
+  latitude: number;
+  longitude: number;
+  takenAt?: string | Date;
 };
 
-type RouteMapPreviewProps = {
-  points: RoutePoint[];
-};
+type Props = { points: MapPoint[] };
 
-type ValidRoutePoint = RoutePoint & {
-  latitudeNumber: number;
-  longitudeNumber: number;
-};
+const containerStyle = { width: "100%", height: "100%" };
 
-const numberedMarkerIcons = new Map<string, L.DivIcon>();
+export default function RouteMapPreview({ points }: Props) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const { isLoaded, loadError } = useJsApiLoader({ id: "waypoint-google-map", googleMapsApiKey: apiKey });
 
-function getPointTimestamp(point: RoutePoint) {
-  return point.timestamp || point.takenAt || "";
-}
-
-function getPointLabel(point: RoutePoint, index: number) {
-  return point.filename || `Point ${index + 1}`;
-}
-
-function formatTimestamp(timestamp: string) {
-  if (!timestamp) {
-    return "Unknown time";
-  }
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown time";
-  }
-
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function getMarkerIcon(
-  index: number,
-  pointCount: number
-): L.DivIcon {
-  const type =
-    index === 0 ? "start" : index === pointCount - 1 ? "end" : "middle";
-
-  const cacheKey = `${type}-${index}`;
-
-  const cachedIcon = numberedMarkerIcons.get(cacheKey);
-
-  if (cachedIcon) {
-    return cachedIcon;
-  }
-
-  const backgroundClass =
-    type === "start"
-      ? "background:#22c55e;"
-      : type === "end"
-        ? "background:#047857;"
-        : "background:#34d399;";
-
-  const icon = L.divIcon({
-    className: "",
-    html: `
-      <div
-        style="
-          ${backgroundClass}
-          width:32px;
-          height:32px;
-          border-radius:9999px;
-          border:3px solid white;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          color:#07130f;
-          font-size:12px;
-          font-weight:800;
-          box-shadow:0 4px 14px rgba(0,0,0,0.45);
-        "
-      >
-        ${index + 1}
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -18],
-  });
-
-  numberedMarkerIcons.set(cacheKey, icon);
-
-  return icon;
-}
-
-function FitMapBounds({ points }: { points: ValidRoutePoint[] }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (points.length === 0) {
-      return;
-    }
-
-    const bounds = L.latLngBounds(
-      points.map((point) => [
-        point.latitudeNumber,
-        point.longitudeNumber,
-      ])
-    );
-
-    if (points.length === 1) {
-      map.setView(bounds.getCenter(), 13);
-      return;
-    }
-
-    map.fitBounds(bounds, {
-      padding: [40, 40],
-      maxZoom: 14,
-    });
-  }, [map, points]);
-
-  return null;
-}
-
-export default function RouteMapPreview({
-  points,
-}: RouteMapPreviewProps) {
-  const validPoints = useMemo<ValidRoutePoint[]>(() => {
-    return points
-      .map((point) => ({
-        ...point,
-        latitudeNumber: Number(point.latitude),
-        longitudeNumber: Number(point.longitude),
-      }))
-      .filter(
-        (point) =>
-          Number.isFinite(point.latitudeNumber) &&
-          Number.isFinite(point.longitudeNumber) &&
-          point.latitudeNumber >= -90 &&
-          point.latitudeNumber <= 90 &&
-          point.longitudeNumber >= -180 &&
-          point.longitudeNumber <= 180
-      )
-      .sort((a, b) => {
-        const aTime = new Date(getPointTimestamp(a)).getTime();
-        const bTime = new Date(getPointTimestamp(b)).getTime();
-
-        if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
-          return 0;
-        }
-
-        if (Number.isNaN(aTime)) {
-          return 1;
-        }
-
-        if (Number.isNaN(bTime)) {
-          return -1;
-        }
-
-        return aTime - bTime;
-      });
-  }, [points]);
-
-  const routePositions = useMemo<[number, number][]>(
-    () =>
-      validPoints.map((point) => [
-        point.latitudeNumber,
-        point.longitudeNumber,
-      ]),
-    [validPoints]
+  const validPoints = useMemo(
+    () => points.filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude)),
+    [points],
   );
+  const center = useMemo(() => {
+    if (!validPoints.length) return { lat: 33.749, lng: -84.388 };
+    return {
+      lat: validPoints.reduce((sum, point) => sum + point.latitude, 0) / validPoints.length,
+      lng: validPoints.reduce((sum, point) => sum + point.longitude, 0) / validPoints.length,
+    };
+  }, [validPoints]);
+  const path = validPoints.map((point) => ({ lat: point.latitude, lng: point.longitude }));
 
-  if (validPoints.length === 0) {
-    return (
-      <div className="flex h-[520px] items-center justify-center rounded-3xl border border-white/10 bg-[#0d1b2f] p-8 text-center">
-        <div>
-          <p className="text-lg font-semibold text-white">
-            No valid coordinates
-          </p>
-
-          <p className="mt-2 text-sm text-slate-400">
-            This trip does not contain enough location data to display a map.
-          </p>
-        </div>
-      </div>
-    );
+  if (!apiKey) {
+    return <div className="flex h-96 items-center justify-center rounded-[1.5rem] border border-amber-300/20 bg-amber-400/10 p-8 text-center text-amber-100">Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to display the Google Map.</div>;
   }
-
-  const firstPoint = validPoints[0];
+  if (loadError) {
+    return <div className="flex h-96 items-center justify-center rounded-[1.5rem] border border-red-300/20 bg-red-400/10 p-8 text-center text-red-100">Google Maps could not load. Check the API key, Maps JavaScript API, billing, and website restrictions.</div>;
+  }
+  if (!isLoaded) {
+    return <div className="flex h-96 items-center justify-center rounded-[1.5rem] border border-white/10 bg-white/5 text-slate-300">Loading Google Maps…</div>;
+  }
+  if (!validPoints.length) {
+    return <div className="flex h-96 items-center justify-center rounded-[1.5rem] border border-white/10 bg-white/5 text-slate-300">No mapped photo points are available.</div>;
+  }
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/10">
-      <MapContainer
-        center={[
-          firstPoint.latitudeNumber,
-          firstPoint.longitudeNumber,
-        ]}
-        zoom={12}
-        scrollWheelZoom
-        className="h-[520px] w-full"
+    <div className="h-[28rem] overflow-hidden rounded-[1.5rem] border border-white/10">
+      <GoogleMap
+        mapContainerStyle={containerStyle}
+        center={center}
+        zoom={validPoints.length === 1 ? 11 : 5}
+        options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: true, gestureHandling: "greedy" }}
+        onLoad={(map) => {
+          if (validPoints.length > 1) {
+            const bounds = new google.maps.LatLngBounds();
+            path.forEach((position) => bounds.extend(position));
+            map.fitBounds(bounds, 56);
+          }
+        }}
       >
-        <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
-        />
-
-        <FitMapBounds points={validPoints} />
-
-        {routePositions.length > 1 && (
-          <Polyline
-            positions={routePositions}
-            pathOptions={{
-              color: "#10b981",
-              weight: 4,
-              opacity: 0.9,
-            }}
-          />
-        )}
-
+        {path.length > 1 && <PolylineF path={path} options={{ strokeOpacity: 0.85, strokeWeight: 4 }} />}
         {validPoints.map((point, index) => (
-          <Marker
-            key={
-              point.id ||
-              `${point.latitudeNumber}-${point.longitudeNumber}-${index}`
-            }
-            position={[
-              point.latitudeNumber,
-              point.longitudeNumber,
-            ]}
-            icon={getMarkerIcon(index, validPoints.length)}
-          >
-            <Popup>
-              <div className="min-w-44">
-                <p className="font-semibold">
-                  {getPointLabel(point, index)}
-                </p>
-
-                <p className="mt-1 text-sm">
-                  {formatTimestamp(getPointTimestamp(point))}
-                </p>
-
-                <p className="mt-1 text-xs">
-                  {point.latitudeNumber.toFixed(5)},{" "}
-                  {point.longitudeNumber.toFixed(5)}
-                </p>
-
-                {index === 0 && (
-                  <p className="mt-2 text-xs font-semibold text-green-700">
-                    Trip start
-                  </p>
-                )}
-
-                {index === validPoints.length - 1 &&
-                  validPoints.length > 1 && (
-                    <p className="mt-2 text-xs font-semibold text-emerald-800">
-                      Trip end
-                    </p>
-                  )}
-              </div>
-            </Popup>
-          </Marker>
+          <MarkerF key={point.id ?? `${point.latitude}-${point.longitude}-${index}`} position={{ lat: point.latitude, lng: point.longitude }} label={`${index + 1}`} onClick={() => setSelectedIndex(index)} />
         ))}
-      </MapContainer>
-
-      <div className="pointer-events-none absolute bottom-5 left-5 z-[500] rounded-2xl border border-white/10 bg-[#07130f]/90 px-4 py-3 text-white shadow-xl backdrop-blur">
-        <p className="text-xs text-slate-400">Interactive route map</p>
-
-        <p className="mt-1 text-sm font-semibold">
-          {validPoints.length} mapped photo point
-          {validPoints.length === 1 ? "" : "s"}
-        </p>
-      </div>
+        {selectedIndex !== null && validPoints[selectedIndex] && (
+          <InfoWindowF position={{ lat: validPoints[selectedIndex].latitude, lng: validPoints[selectedIndex].longitude }} onCloseClick={() => setSelectedIndex(null)}>
+            <div className="max-w-52 text-slate-900">
+              <p className="font-semibold">{validPoints[selectedIndex].filename || `Photo ${selectedIndex + 1}`}</p>
+              {validPoints[selectedIndex].takenAt && <p className="mt-1 text-xs">{new Date(validPoints[selectedIndex].takenAt!).toLocaleString()}</p>}
+            </div>
+          </InfoWindowF>
+        )}
+      </GoogleMap>
     </div>
   );
 }

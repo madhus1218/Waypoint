@@ -173,15 +173,14 @@ export default function TripsPage() {
           <h1 className="text-3xl font-bold">No saved trips yet.</h1>
 
           <p className="mt-4 leading-7 text-slate-300">
-            Upload photos, let Waypoint detect your trips, and confirm them to
-            build your travel history.
+            Upload photos, let Waypoint detect and refine trips, then confirm them to build your travel history.
           </p>
 
           <Link
             href="/upload"
             className="mt-7 inline-flex rounded-full bg-emerald-500 px-7 py-3 font-semibold text-white transition hover:bg-emerald-400"
           >
-            Upload Photos
+            Upload photos
           </Link>
         </section>
       </main>

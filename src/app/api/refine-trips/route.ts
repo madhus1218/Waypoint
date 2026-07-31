@@ -4,6 +4,7 @@ import { z } from "zod/v3";
 import { NextResponse } from "next/server";
 
 type InputPoint = {
+  id: string;
   filename: string;
   latitude: number;
   longitude: number;
@@ -76,6 +77,7 @@ function validateTrips(value: unknown): InputTrip[] | null {
       if (
         typeof possiblePoint !== "object" ||
         possiblePoint === null ||
+        typeof possiblePoint.id !== "string" ||
         typeof possiblePoint.filename !== "string" ||
         typeof possiblePoint.latitude !== "number" ||
         typeof possiblePoint.longitude !== "number" ||
@@ -92,6 +94,7 @@ function validateTrips(value: unknown): InputTrip[] | null {
       }
 
       points.push({
+        id: possiblePoint.id,
         filename: possiblePoint.filename,
         latitude: possiblePoint.latitude,
         longitude: possiblePoint.longitude,
@@ -171,6 +174,7 @@ function buildModelInput(trips: InputTrip[]) {
       samplePoints: trip.points
         .slice(0, 12)
         .map((point) => ({
+          id: point.id,
           latitude: point.latitude,
           longitude: point.longitude,
           timestamp: point.timestamp,
